@@ -1,0 +1,13 @@
+temp/
+hf_cache/
+__pycache__/
+*.pyc
+.env
+.env.prod
+.env.txt
+node_modules/
+dist/
+
+# Throwaway dev scripts (never deployed)
+_test_*.py
+_backfill_*.py

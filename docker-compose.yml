@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./temp:/app/temp
+      - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
+      - ${SCRIPT_INBOX_HOST:-./script_inbox}:/inbox/scripts
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - SCRIPT_INBOX_DIR=/inbox/scripts
+      - INBOX_PSYCHO=${INBOX_PSYCHO:-/inbox/scripts}
+      - INBOX_ARCHIVE=${INBOX_ARCHIVE:-}
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_R2_ACCOUNT_ID=${R2_ACCOUNT_ID}
+      - VITE_R2_BUCKET=${R2_BUCKET}
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+    restart: unless-stopped

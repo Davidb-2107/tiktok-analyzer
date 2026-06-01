@@ -1,0 +1,33 @@
+# Production compose for the Contabo VPS. Joins the shared docker_app-network
+# so cloudflare-tunnel can reach the backend by its container name. No host
+# port binding — all traffic enters via Cloudflare Tunnel.
+#
+# Usage on VPS:
+#   cd /home/projects/tiktok-analyzer
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  tiktok-analyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: tiktok-analyzer
+    volumes:
+      - tiktok_temp:/app/temp
+      - tiktok_hf_cache:/root/.cache/huggingface
+    env_file:
+      - .env.prod
+    restart: unless-stopped
+    networks:
+      - app-network
+    # No "ports:" — cloudflare-tunnel reaches the container at
+    # http://tiktok-analyzer:8000 over the internal app-network.
+
+networks:
+  app-network:
+    external: true
+    name: docker_app-network
+
+volumes:
+  tiktok_temp:
+  tiktok_hf_cache:
