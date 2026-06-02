@@ -208,11 +208,23 @@ def _build_script_text(job: dict) -> str:
     return "\n".join(headers) + "\n\n" + (job.get("transcript") or "") + "\n"
 
 
+def _job_day(job: dict) -> str:
+    """Filename date prefix — derived from the job's `created_at` so a single
+    job always produces the same inbox filename across re-runs (backfill,
+    refresh, retag, etc.). Falls back to today if created_at is missing or
+    malformed. ISO timestamps always start with `YYYY-MM-DD` so slicing the
+    first 10 chars is safe and avoids parsing overhead."""
+    s = job.get("created_at") or ""
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 def _write_script(job_id: str) -> None:
     """On job done with transcript: write to temp/{job_id}/script.txt and
     mirror into the project-specific inbox (or SCRIPT_INBOX_DIR fallback) if
     configured. Project 'archive' skips the inbox drop. Silently no-op if no
-    transcript."""
+    transcript. Filename uses job.created_at so re-runs are idempotent."""
     job = _load_job(job_id) or {}
     if not job.get("transcript"):
         return
@@ -225,11 +237,35 @@ def _write_script(job_id: str) -> None:
     if inbox_dir:
         author = _resolve_author(job)
         video_id = _parse_source(job.get("url", ""))["video_id"]
-        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        day = _job_day(job)
         filename = f"{day}_{_safe_slug(author)}_{_safe_slug(video_id)}.txt"
         inbox = Path(inbox_dir)
         inbox.mkdir(parents=True, exist_ok=True)
         (inbox / filename).write_text(body, encoding="utf-8")
+
+
+def _write_audio(job_id: str) -> None:
+    """Mirror the extracted audio.mp3 into the project inbox using the same
+    {date}_{author}_{video_id}.mp3 naming as the script.txt drop, so .txt
+    and .mp3 form a deterministic pair. Skips when project='archive' (matches
+    _write_script) and when audio.mp3 is missing."""
+    job = _load_job(job_id) or {}
+    src = _audio_path(job_id)
+    if not src.exists():
+        return
+    project = job.get("project")
+    if project == ARCHIVE_PROJECT:
+        return
+    inbox_dir = _inbox_dir_for_project(project)
+    if not inbox_dir:
+        return
+    author = _resolve_author(job)
+    video_id = _parse_source(job.get("url", ""))["video_id"]
+    day = _job_day(job)
+    filename = f"{day}_{_safe_slug(author)}_{_safe_slug(video_id)}.mp3"
+    inbox = Path(inbox_dir)
+    inbox.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, inbox / filename)
 
 
 JobStatus = Literal[
@@ -521,7 +557,9 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
             transcript, segments = transcribe_result
 
         shutil.rmtree(_frames_dir(job_id), ignore_errors=True)
-        audio_path.unlink(missing_ok=True)
+        # Keep audio_path on disk (temp/{job_id}/audio.mp3) — needed by the
+        # /audio.mp3 endpoint and the inbox mirror for downstream voice
+        # analysis (parselmouth/Praat, ElevenLabs cloning, etc.).
         _update_job(
             job_id,
             status="done",
@@ -530,6 +568,7 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
             segments=segments,
         )
         _write_script(job_id)
+        _write_audio(job_id)
 
     except Exception as exc:
         _update_job(job_id, status="error", error=str(exc))
@@ -649,6 +688,21 @@ async def get_script(job_id: str):
     return FileResponse(
         script_path, media_type="text/plain; charset=utf-8", filename=download_name
     )
+
+
+@app.get("/jobs/{job_id}/audio.mp3")
+async def get_audio(job_id: str):
+    audio_path = _audio_path(job_id)
+    if not audio_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Audio not found (older jobs ran before audio retention was enabled)",
+        )
+    job = _load_job(job_id) or {}
+    author = _resolve_author(job)
+    video_id = _parse_source(job.get("url", ""))["video_id"]
+    download_name = f"{_safe_slug(author)}_{_safe_slug(video_id)}.mp3"
+    return FileResponse(audio_path, media_type="audio/mpeg", filename=download_name)
 
 
 def _refresh_metadata_sync(url: str) -> tuple[float, str | None, dict]:

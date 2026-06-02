@@ -318,6 +318,23 @@ export default function App() {
               ⬇ Captions (.srt)
             </a>
           )}
+          {jobStatus.status === 'done' && (
+            <a
+              href={`${API}/jobs/${jobId}/audio.mp3`}
+              title="Download extracted MP3 audio (404 for older jobs run before audio retention)"
+              style={{
+                padding: '0.4rem 0.85rem',
+                borderRadius: '6px',
+                border: '1px solid #2a2a2a',
+                background: 'transparent',
+                color: '#aaa',
+                fontSize: '0.85rem',
+                textDecoration: 'none',
+              }}
+            >
+              ⬇ Audio (.mp3)
+            </a>
+          )}
           {jobStatus.url && (
             <a
               href={jobStatus.url}
