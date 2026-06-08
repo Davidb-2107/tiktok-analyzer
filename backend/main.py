@@ -22,6 +22,43 @@ app = FastAPI(title="TikTok Analyzer")
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
 ACTIVE_TERMINAL = {"done", "error"}
 
+# --- Input guards (public endpoint) ---------------------------------------
+# Only accept URLs whose host matches one of these domains (subdomains allowed,
+# e.g. www.tiktok.com, vm.tiktok.com, m.youtube.com). Override via env
+# ALLOWED_VIDEO_DOMAINS (comma-separated). Empty value disables the check.
+_DEFAULT_ALLOWED_DOMAINS = "tiktok.com,youtube.com,youtu.be"
+ALLOWED_VIDEO_DOMAINS = {
+    d.strip().lower()
+    for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(
+        ","
+    )
+    if d.strip()
+}
+# Reject videos longer than this (seconds) before downloading. 0 disables the cap.
+MAX_VIDEO_DURATION_SEC = int(os.environ.get("MAX_VIDEO_DURATION_SEC", "600"))
+
+# Optional shared secret. When set, mutating requests (POST/DELETE) must carry an
+# X-API-Key header matching it. GET stays open so the SPA/polling and read-only
+# sessions work without a secret. Empty value = fully open (dev behaviour).
+API_KEY = os.environ.get("API_KEY", "").strip()
+_PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+# Registered BEFORE CORS so the CORS middleware stays outermost and 401 responses
+# still carry CORS headers (browsers can then read the error body).
+@app.middleware("http")
+async def _api_key_guard(request, call_next):
+    if (
+        API_KEY
+        and request.method in _PROTECTED_METHODS
+        and request.headers.get("X-API-Key") != API_KEY
+    ):
+        return JSONResponse(
+            status_code=401, content={"detail": "Invalid or missing X-API-Key."}
+        )
+    return await call_next(request)
+
+
 _allowed_origin = os.environ.get("ALLOWED_ORIGIN", "*")
 app.add_middleware(
     CORSMiddleware,
@@ -589,6 +626,36 @@ def _count_active_jobs() -> int:
     return count
 
 
+def _validate_url_domain(url: str) -> None:
+    """Reject malformed URLs and hosts outside ALLOWED_VIDEO_DOMAINS.
+
+    Subdomains of an allowed domain pass (host == d or host endswith '.'+d).
+    Raises HTTPException(422) on rejection. No-op when the allowlist is empty.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url.strip())
+    except Exception:
+        raise HTTPException(status_code=422, detail="Malformed URL.")
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(status_code=422, detail="URL must be an http(s) link.")
+    if not ALLOWED_VIDEO_DOMAINS:
+        return
+    host = parsed.hostname.lower()
+    if not any(host == d or host.endswith("." + d) for d in ALLOWED_VIDEO_DOMAINS):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Domain '{host}' not allowed. Allowed: {sorted(ALLOWED_VIDEO_DOMAINS)}.",
+        )
+
+
+def _probe_duration(url: str) -> float:
+    """Fetch video duration (seconds) via yt-dlp metadata WITHOUT downloading."""
+    ydl_opts = {"skip_download": True, "quiet": True, "no_warnings": True}
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    return float(info.get("duration") or 0)
+
+
 @app.post("/analyze", response_model=JobResponse)
 async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
     if _count_active_jobs() >= MAX_CONCURRENT_JOBS:
@@ -596,6 +663,21 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             status_code=429,
             detail=f"Too many active jobs (max {MAX_CONCURRENT_JOBS}). Wait for current jobs to finish.",
         )
+    _validate_url_domain(request.url)
+    if MAX_VIDEO_DURATION_SEC > 0:
+        try:
+            probed = await asyncio.to_thread(_probe_duration, request.url)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502, detail=f"Could not read video metadata: {exc}"
+            )
+        if probed > MAX_VIDEO_DURATION_SEC:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Video too long ({int(probed)}s > {MAX_VIDEO_DURATION_SEC}s cap)."
+                ),
+            )
     project = request.project
     if project is not None:
         project = project.strip().lower() or None

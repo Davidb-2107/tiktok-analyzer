@@ -44,6 +44,10 @@ Transcription is automatic when no captions are found in the source — no manua
 
 Job metadata is persisted to `temp/{job_id}/job.json`. The `temp/` directory is Docker-volume-mounted so it survives container restarts.
 
+## Using the Live API
+
+The service is **deployed and public** at `https://tiktok-analyzer.hen8n.com` (no auth — Cloudflare Access bypassed). Any session can analyze a video by `POST /analyze` then polling `GET /status/{job_id}` until `done`. See **`API.md`** for the full contract, response schema, and a copy-paste client.
+
 ## Key API Endpoints
 
 | Method | Path | Purpose |
@@ -69,6 +73,9 @@ R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
 R2_BUCKET, R2_ENDPOINT
 ALLOWED_ORIGIN          # CORS origin (use * for dev)
 MAX_CONCURRENT_JOBS     # Default: 2
+API_KEY                 # Optional shared secret. When set, mutating requests (POST/DELETE) require header X-API-Key: <key>. GET stays open. Empty = fully open (dev).
+ALLOWED_VIDEO_DOMAINS   # Comma-separated host allowlist for /analyze (subdomains OK). Default: tiktok.com,youtube.com,youtu.be. Empty disables the check.
+MAX_VIDEO_DURATION_SEC  # Reject videos longer than this (probed before download). Default: 600. 0 disables the cap.
 WHISPER_MODEL           # faster-whisper model (tiny/base/small/medium/large-v3). Default: medium
 WHISPER_DEVICE          # cpu or cuda. Default: cpu
 WHISPER_COMPUTE_TYPE    # int8 (CPU recommended) or float16 (GPU). Default: int8
