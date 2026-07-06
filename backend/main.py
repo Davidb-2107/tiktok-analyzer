@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import urllib.parse
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -14,11 +14,10 @@ import boto3
 import yt_dlp
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from faster_whisper import WhisperModel
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
-
+from faster_whisper import WhisperModel
 from ocr import ocr_frames
+from pydantic import BaseModel
 
 app = FastAPI(title="TikTok Analyzer")
 
@@ -32,9 +31,7 @@ ACTIVE_TERMINAL = {"done", "error"}
 _DEFAULT_ALLOWED_DOMAINS = "tiktok.com,youtube.com,youtu.be"
 ALLOWED_VIDEO_DOMAINS = {
     d.strip().lower()
-    for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(
-        ","
-    )
+    for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(",")
     if d.strip()
 }
 # Reject videos longer than this (seconds) before downloading. 0 disables the cap.
@@ -51,24 +48,13 @@ _PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # still carry CORS headers (browsers can then read the error body).
 @app.middleware("http")
 async def _api_key_guard(request, call_next):
-    if (
-        API_KEY
-        and request.method in _PROTECTED_METHODS
-        and request.headers.get("X-API-Key") != API_KEY
-    ):
-        return JSONResponse(
-            status_code=401, content={"detail": "Invalid or missing X-API-Key."}
-        )
+    if API_KEY and request.method in _PROTECTED_METHODS and request.headers.get("X-API-Key") != API_KEY:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing X-API-Key."})
     return await call_next(request)
 
 
 _allowed_origin = os.environ.get("ALLOWED_ORIGIN", "*")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[_allowed_origin],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=[_allowed_origin], allow_methods=["*"], allow_headers=["*"])
 
 TEMP_DIR = Path("/app/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -96,9 +82,7 @@ def _get_whisper() -> WhisperModel:
     global _whisper_model
     if _whisper_model is None:
         _whisper_model = WhisperModel(
-            WHISPER_MODEL_NAME,
-            device=WHISPER_DEVICE,
-            compute_type=WHISPER_COMPUTE_TYPE,
+            WHISPER_MODEL_NAME, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE
         )
     return _whisper_model
 
@@ -160,24 +144,16 @@ def _inbox_dir_for_project(project: str | None) -> str | None:
 
 
 _TIKTOK_URL_RE = re.compile(r"tiktok\.com/@([^/?]+)/video/(\d+)")
-_YOUTUBE_URL_RE = re.compile(
-    r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))([\w-]+)"
-)
+_YOUTUBE_URL_RE = re.compile(r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))([\w-]+)")
 # Instagram URLs: optional username segment before reel/p/tv
 # Examples: instagram.com/reel/CxYz/, instagram.com/joe.doe/reel/CxYz/
-_INSTAGRAM_URL_RE = re.compile(
-    r"instagram\.com/(?:([\w.]+)/)?(?:reel|reels|p|tv)/([\w-]+)"
-)
+_INSTAGRAM_URL_RE = re.compile(r"instagram\.com/(?:([\w.]+)/)?(?:reel|reels|p|tv)/([\w-]+)")
 
 
 def _parse_source(url: str) -> dict:
     m = _TIKTOK_URL_RE.search(url or "")
     if m:
-        return {
-            "platform": "tiktok",
-            "author": f"@{m.group(1)}",
-            "video_id": m.group(2),
-        }
+        return {"platform": "tiktok", "author": f"@{m.group(1)}", "video_id": m.group(2)}
     m = _INSTAGRAM_URL_RE.search(url or "")
     if m:
         author = f"@{m.group(1)}" if m.group(1) else "unknown"
@@ -203,7 +179,7 @@ def _safe_slug(s: str) -> str:
 
 def _build_script_text(job: dict) -> str:
     author = _resolve_author(job)
-    transcribed = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    transcribed = datetime.now(UTC).astimezone().isoformat(timespec="seconds")
     model_info = f"faster-whisper-{WHISPER_MODEL_NAME} {WHISPER_COMPUTE_TYPE} {WHISPER_DEVICE} beam=10"
     headers = [
         f"# SOURCE: {job.get('url', '')}",
@@ -212,12 +188,7 @@ def _build_script_text(job: dict) -> str:
     ]
     # Engagement metrics from yt-dlp at download time. Lines omitted when
     # the platform/account did not expose the metric (Insta private, etc.).
-    metric_labels = [
-        ("views", "VIEWS"),
-        ("likes", "LIKES"),
-        ("comments", "COMMENTS"),
-        ("shares", "SHARES"),
-    ]
+    metric_labels = [("views", "VIEWS"), ("likes", "LIKES"), ("comments", "COMMENTS"), ("shares", "SHARES")]
     metrics = job.get("metrics") or {}
     for key, label in metric_labels:
         v = metrics.get(key)
@@ -241,10 +212,7 @@ def _build_script_text(job: dict) -> str:
         single_line = re.sub(r"\s+", " ", description).strip()
         if single_line:
             headers.append(f"# CAPTION: {single_line}")
-    headers += [
-        f"# TRANSCRIBED: {transcribed}",
-        f"# MODEL: {model_info}",
-    ]
+    headers += [f"# TRANSCRIBED: {transcribed}", f"# MODEL: {model_info}"]
     return "\n".join(headers) + "\n\n" + (job.get("transcript") or "") + "\n"
 
 
@@ -257,7 +225,7 @@ def _job_day(job: dict) -> str:
     s = job.get("created_at") or ""
     if len(s) >= 10 and s[4] == "-" and s[7] == "-":
         return s[:10]
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def _write_script(job_id: str) -> None:
@@ -308,15 +276,7 @@ def _write_audio(job_id: str) -> None:
     shutil.copy2(src, inbox / filename)
 
 
-JobStatus = Literal[
-    "pending",
-    "downloading",
-    "extracting",
-    "frames_ready",
-    "transcribing",
-    "done",
-    "error",
-]
+JobStatus = Literal["pending", "downloading", "extracting", "frames_ready", "transcribing", "done", "error"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -375,9 +335,7 @@ def _update_job(job_id: str, **kwargs) -> None:
 
 def _presign_key(key: str) -> str:
     return s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": R2_BUCKET, "Key": key},
-        ExpiresIn=PRESIGN_TTL,
+        "get_object", Params={"Bucket": R2_BUCKET, "Key": key}, ExpiresIn=PRESIGN_TTL
     )
 
 
@@ -401,9 +359,7 @@ def _resolve_frames(job_id: str, job: dict) -> dict:
     return job
 
 
-def _download_video(
-    url: str, output_path: Path
-) -> tuple[Path, float, str | None, dict]:
+def _download_video(url: str, output_path: Path) -> tuple[Path, float, str | None, dict]:
     ydl_opts = {
         "format": "best[height<=1080]/best[ext=mp4]/best",
         "outtmpl": str(output_path / "%(id)s.%(ext)s"),
@@ -419,11 +375,7 @@ def _download_video(
         uploader = next(
             (
                 v
-                for v in (
-                    info.get("uploader_id"),
-                    info.get("uploader"),
-                    info.get("channel"),
-                )
+                for v in (info.get("uploader_id"), info.get("uploader"), info.get("channel"))
                 if v and not str(v).isdigit()
             ),
             None,
@@ -468,18 +420,7 @@ def _extract_frames(video_path: Path, out_dir: Path, fps: float) -> list[str]:
     base_vf = f"setpts=PTS-STARTPTS,fps={fps},format=yuvj420p"
 
     def run(extra: list[str]) -> subprocess.CompletedProcess:
-        cmd = [
-            "ffmpeg",
-            *extra,
-            "-i",
-            str(video_path),
-            "-vf",
-            base_vf,
-            "-q:v",
-            "2",
-            output_pattern,
-            "-y",
-        ]
+        cmd = ["ffmpeg", *extra, "-i", str(video_path), "-vf", base_vf, "-q:v", "2", output_pattern, "-y"]
         return subprocess.run(cmd, capture_output=True, text=True)
 
     # First try: plain decode. Some HEVC TikTok sources tag VUI colour as
@@ -489,10 +430,7 @@ def _extract_frames(video_path: Path, out_dir: Path, fps: float) -> list[str]:
     result = run([])
     if result.returncode != 0 and "Invalid color space" in result.stderr:
         result = run(
-            [
-                "-bsf:v",
-                "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
-            ]
+            ["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
         )
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr}")
@@ -527,12 +465,7 @@ def _parse_vtt(vtt: str) -> str:
     text_lines = []
     for line in lines:
         line = line.strip()
-        if (
-            not line
-            or line.startswith("WEBVTT")
-            or "-->" in line
-            or re.match(r"^\d+$", line)
-        ):
+        if not line or line.startswith("WEBVTT") or "-->" in line or re.match(r"^\d+$", line):
             continue
         clean = re.sub(r"<[^>]+>", "", line)
         if clean and (not text_lines or clean != text_lines[-1]):
@@ -546,9 +479,7 @@ def _upload_frames(job_id: str, frame_names: list[str]) -> list[str]:
     src_dir = _frames_dir(job_id)
     for name in frame_names:
         key = f"{job_id}/{name}"
-        s3.upload_file(
-            str(src_dir / name), R2_BUCKET, key, ExtraArgs={"ContentType": "image/jpeg"}
-        )
+        s3.upload_file(str(src_dir / name), R2_BUCKET, key, ExtraArgs={"ContentType": "image/jpeg"})
         keys.append(key)
     return keys
 
@@ -558,17 +489,13 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
 
     try:
         _update_job(job_id, status="downloading")
-        video_path, duration, uploader, metrics = await asyncio.to_thread(
-            _download_video, url, job_dir
-        )
+        video_path, duration, uploader, metrics = await asyncio.to_thread(_download_video, url, job_dir)
 
         audio_path = _audio_path(job_id)
         await asyncio.to_thread(_extract_audio, video_path, audio_path)
 
         _update_job(job_id, status="extracting")
-        frame_names = await asyncio.to_thread(
-            _extract_frames, video_path, _frames_dir(job_id), fps
-        )
+        frame_names = await asyncio.to_thread(_extract_frames, video_path, _frames_dir(job_id), fps)
         video_path.unlink(missing_ok=True)
 
         # Frames are local — frontend can display them immediately
@@ -655,8 +582,7 @@ def _validate_url_domain(url: str) -> None:
     host = parsed.hostname.lower()
     if not any(host == d or host.endswith("." + d) for d in ALLOWED_VIDEO_DOMAINS):
         raise HTTPException(
-            status_code=422,
-            detail=f"Domain '{host}' not allowed. Allowed: {sorted(ALLOWED_VIDEO_DOMAINS)}.",
+            status_code=422, detail=f"Domain '{host}' not allowed. Allowed: {sorted(ALLOWED_VIDEO_DOMAINS)}."
         )
 
 
@@ -680,23 +606,17 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         try:
             probed = await asyncio.to_thread(_probe_duration, request.url)
         except Exception as exc:
-            raise HTTPException(
-                status_code=502, detail=f"Could not read video metadata: {exc}"
-            )
+            raise HTTPException(status_code=502, detail=f"Could not read video metadata: {exc}")
         if probed > MAX_VIDEO_DURATION_SEC:
             raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"Video too long ({int(probed)}s > {MAX_VIDEO_DURATION_SEC}s cap)."
-                ),
+                status_code=422, detail=(f"Video too long ({int(probed)}s > {MAX_VIDEO_DURATION_SEC}s cap).")
             )
     project = request.project
     if project is not None:
         project = project.strip().lower() or None
     if project is not None and project not in KNOWN_PROJECTS:
         raise HTTPException(
-            status_code=422,
-            detail=f"Unknown project '{project}'. Allowed: {sorted(KNOWN_PROJECTS)} or null.",
+            status_code=422, detail=f"Unknown project '{project}'. Allowed: {sorted(KNOWN_PROJECTS)} or null."
         )
     job_id = str(uuid.uuid4())
     job_dir = TEMP_DIR / job_id
@@ -711,13 +631,11 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             "transcript": None,
             "duration": None,
             "project": project,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         },
     )
     background_tasks.add_task(_process_job, job_id, request.url, request.fps)
-    return JobResponse(
-        job_id=job_id, status="pending", url=request.url, project=project
-    )
+    return JobResponse(job_id=job_id, status="pending", url=request.url, project=project)
 
 
 @app.get("/frames/{job_id}/local/{frame_name}")
@@ -779,9 +697,7 @@ async def get_script(job_id: str):
     author = _resolve_author(job)
     video_id = _parse_source(job.get("url", ""))["video_id"]
     download_name = f"{_safe_slug(author)}_{_safe_slug(video_id)}.txt"
-    return FileResponse(
-        script_path, media_type="text/plain; charset=utf-8", filename=download_name
-    )
+    return FileResponse(script_path, media_type="text/plain; charset=utf-8", filename=download_name)
 
 
 @app.get("/jobs/{job_id}/audio.mp3")
@@ -789,8 +705,7 @@ async def get_audio(job_id: str):
     audio_path = _audio_path(job_id)
     if not audio_path.exists():
         raise HTTPException(
-            status_code=404,
-            detail="Audio not found (older jobs ran before audio retention was enabled)",
+            status_code=404, detail="Audio not found (older jobs ran before audio retention was enabled)"
         )
     job = _load_job(job_id) or {}
     author = _resolve_author(job)
@@ -803,22 +718,14 @@ def _refresh_metadata_sync(url: str) -> tuple[float, str | None, dict]:
     """Re-poll yt-dlp metadata WITHOUT downloading. Mirrors the handle-picker
     AND the full metrics shape (incl. tags/description) of _download_video,
     so refresh-metrics does not silently truncate already-captured fields."""
-    ydl_opts = {
-        "skip_download": True,
-        "quiet": True,
-        "no_warnings": True,
-    }
+    ydl_opts = {"skip_download": True, "quiet": True, "no_warnings": True}
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
     duration = float(info.get("duration") or 0)
     uploader = next(
         (
             v
-            for v in (
-                info.get("uploader_id"),
-                info.get("uploader"),
-                info.get("channel"),
-            )
+            for v in (info.get("uploader_id"), info.get("uploader"), info.get("channel"))
             if v and not str(v).isdigit()
         ),
         None,
@@ -843,22 +750,15 @@ async def refresh_metrics(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.get("status") != "done":
-        raise HTTPException(
-            status_code=400,
-            detail="Job must be done before metrics can be refreshed",
-        )
+        raise HTTPException(status_code=400, detail="Job must be done before metrics can be refreshed")
     url = job.get("url")
     if not url:
         raise HTTPException(status_code=400, detail="Job has no URL to refresh")
 
     try:
-        duration, uploader, metrics = await asyncio.to_thread(
-            _refresh_metadata_sync, url
-        )
+        duration, uploader, metrics = await asyncio.to_thread(_refresh_metadata_sync, url)
     except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail=f"yt-dlp metadata fetch failed: {exc}"
-        )
+        raise HTTPException(status_code=502, detail=f"yt-dlp metadata fetch failed: {exc}")
 
     updates: dict = {"metrics": metrics}
     if duration:
@@ -951,9 +851,7 @@ async def get_status(job_id: str):
 @app.get("/jobs")
 async def list_jobs():
     jobs = []
-    for job_dir in sorted(
-        TEMP_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True
-    ):
+    for job_dir in sorted(TEMP_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         job_file = job_dir / "job.json"
         if not job_file.exists():
             continue
