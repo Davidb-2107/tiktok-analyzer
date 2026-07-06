@@ -39,6 +39,11 @@ Transcription is automatic when the source has no captions (local faster-whisper
   "duration":  88,                                        // seconds
   "transcript":"full text...",
   "segments":  [ { "start": 0, "end": 1.78, "text": "...", "words": [ { "start", "end", "word" } ] } ],
+  // On-screen overlay text (OCR, RapidOCR PP-OCRv5 latin) — the visual parallel of the
+  // audio transcript. Both null when no overlay text was detected (or OCR failed):
+  // consumers must read them absent-safe (`j.overlay_text ?? null`, `j.overlay_segments ?? []`).
+  "overlay_text":     "on-screen text, one deduplicated caption per line",
+  "overlay_segments": [ { "start": 1.0, "end": 5.0, "text": "POV: ...", "confidence": 0.94 } ],
   "error":     null,                                      // string when status == "error"
   "project":   null,
   "user_tags": []

@@ -4,3 +4,4 @@ yt-dlp==2024.10.7
 python-multipart==0.0.12
 boto3==1.35.36
 faster-whisper>=1.2.0
+rapidocr-onnxruntime==1.4.4

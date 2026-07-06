@@ -18,6 +18,8 @@ from faster_whisper import WhisperModel
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+from ocr import ocr_frames
+
 app = FastAPI(title="TikTok Analyzer")
 
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
@@ -332,6 +334,8 @@ class JobResponse(BaseModel):
     transcript: str | None = None
     duration: float | None = None
     segments: list[dict] | None = None
+    overlay_text: str | None = None
+    overlay_segments: list[dict] | None = None
     project: str | None = None
     user_tags: list[str] = []
 
@@ -583,16 +587,21 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
 
         segments: list[dict] = []
         if transcript:
-            r2_keys = await asyncio.to_thread(_upload_frames, job_id, frame_names)
+            r2_keys, (overlay_text, overlay_segments) = await asyncio.gather(
+                asyncio.to_thread(_upload_frames, job_id, frame_names),
+                asyncio.to_thread(ocr_frames, _frames_dir(job_id), frame_names, fps),
+            )
         else:
             # No captions: frames still local. Mark transcribing so the UI shows
             # progress, then fan out upload + Whisper concurrently.
             _update_job(job_id, status="transcribing", frames=frame_names)
-            r2_keys, transcribe_result = await asyncio.gather(
+            r2_keys, transcribe_result, ocr_result = await asyncio.gather(
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
                 asyncio.to_thread(_transcribe, audio_path),
+                asyncio.to_thread(ocr_frames, _frames_dir(job_id), frame_names, fps),
             )
             transcript, segments = transcribe_result
+            overlay_text, overlay_segments = ocr_result
 
         shutil.rmtree(_frames_dir(job_id), ignore_errors=True)
         # Keep audio_path on disk (temp/{job_id}/audio.mp3) — needed by the
@@ -604,6 +613,8 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
             frames=r2_keys,
             transcript=transcript,
             segments=segments,
+            overlay_text=overlay_text or None,
+            overlay_segments=overlay_segments or None,
         )
         _write_script(job_id)
         _write_audio(job_id)
