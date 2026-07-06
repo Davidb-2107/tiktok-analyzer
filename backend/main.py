@@ -75,6 +75,13 @@ WHISPER_MODEL_NAME = os.environ.get("WHISPER_MODEL", "medium")
 WHISPER_DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 
+# Hook microscope: a denser OCR pass over the opening seconds, where a video
+# wins or loses attention. Overlay captions there often flash <1s and are missed
+# by the 1fps main pass; HOOK_FPS samples them finer. Purely additive — never
+# touches the main frame set or the job fps. Both env-overridable.
+HOOK_WINDOW_S = float(os.environ.get("HOOK_WINDOW_S", "5"))
+HOOK_FPS = float(os.environ.get("HOOK_FPS", "2"))
+
 _whisper_model: WhisperModel | None = None
 
 
@@ -296,6 +303,8 @@ class JobResponse(BaseModel):
     segments: list[dict] | None = None
     overlay_text: str | None = None
     overlay_segments: list[dict] | None = None
+    hook_overlay_text: str | None = None
+    hook_overlay_segments: list[dict] | None = None
     project: str | None = None
     user_tags: list[str] = []
 
@@ -310,6 +319,10 @@ def _job_file(job_id: str) -> Path:
 
 def _frames_dir(job_id: str) -> Path:
     return TEMP_DIR / job_id / "frames"
+
+
+def _hook_frames_dir(job_id: str) -> Path:
+    return TEMP_DIR / job_id / "frames_hook"
 
 
 def _audio_path(job_id: str) -> Path:
@@ -414,13 +427,29 @@ def _extract_audio(video_path: Path, audio_path: Path) -> None:
     subprocess.run(cmd, capture_output=True, check=True)
 
 
-def _extract_frames(video_path: Path, out_dir: Path, fps: float) -> list[str]:
+def _extract_frames(video_path: Path, out_dir: Path, fps: float, limit_s: float | None = None) -> list[str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     output_pattern = str(out_dir / "frame_%03d.jpg")
     base_vf = f"setpts=PTS-STARTPTS,fps={fps},format=yuvj420p"
+    # Output-side trim (right before the pattern) so BOTH the plain decode and
+    # the HEVC retry inherit the cap. None = whole video (the main pass); the
+    # hook pass passes limit_s to grab only the opening window.
+    limit = ["-t", str(limit_s)] if limit_s else []
 
     def run(extra: list[str]) -> subprocess.CompletedProcess:
-        cmd = ["ffmpeg", *extra, "-i", str(video_path), "-vf", base_vf, "-q:v", "2", output_pattern, "-y"]
+        cmd = [
+            "ffmpeg",
+            *extra,
+            "-i",
+            str(video_path),
+            "-vf",
+            base_vf,
+            "-q:v",
+            "2",
+            *limit,
+            output_pattern,
+            "-y",
+        ]
         return subprocess.run(cmd, capture_output=True, text=True)
 
     # First try: plain decode. Some HEVC TikTok sources tag VUI colour as
@@ -484,6 +513,19 @@ def _upload_frames(job_id: str, frame_names: list[str]) -> list[str]:
     return keys
 
 
+def _ocr_main_and_hook(
+    job_id: str, frame_names: list[str], fps: float, hook_names: list[str]
+) -> tuple[tuple[str, list[dict]], tuple[str, list[dict]]]:
+    """Main + hook OCR back-to-back in ONE thread, so the surrounding gather
+    keeps its concurrent-task count (upload + Whisper + this) unchanged — the
+    ~HOOK_FPS*HOOK_WINDOW_S extra hook frames add a few serial seconds that stay
+    hidden under the far slower Whisper pass. ocr_frames never raises, so a hook
+    failure can't sink the main overlay or the transcript."""
+    main = ocr_frames(_frames_dir(job_id), frame_names, fps)
+    hook = ocr_frames(_hook_frames_dir(job_id), hook_names, HOOK_FPS)
+    return main, hook
+
+
 async def _process_job(job_id: str, url: str, fps: float) -> None:
     job_dir = TEMP_DIR / job_id
 
@@ -496,6 +538,15 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
 
         _update_job(job_id, status="extracting")
         frame_names = await asyncio.to_thread(_extract_frames, video_path, _frames_dir(job_id), fps)
+        # Hook microscope: denser 2fps pass over the first HOOK_WINDOW_S seconds.
+        # Best-effort — an ffmpeg failure here must NEVER sink the job (the main
+        # frames + transcript are what matter), so we swallow it to an empty set.
+        try:
+            hook_frame_names = await asyncio.to_thread(
+                _extract_frames, video_path, _hook_frames_dir(job_id), HOOK_FPS, HOOK_WINDOW_S
+            )
+        except Exception:
+            hook_frame_names = []
         video_path.unlink(missing_ok=True)
 
         # Frames are local — frontend can display them immediately
@@ -514,9 +565,12 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
 
         segments: list[dict] = []
         if transcript:
-            r2_keys, (overlay_text, overlay_segments) = await asyncio.gather(
+            (
+                r2_keys,
+                ((overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments)),
+            ) = await asyncio.gather(
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
-                asyncio.to_thread(ocr_frames, _frames_dir(job_id), frame_names, fps),
+                asyncio.to_thread(_ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names),
             )
         else:
             # No captions: frames still local. Mark transcribing so the UI shows
@@ -525,12 +579,13 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
             r2_keys, transcribe_result, ocr_result = await asyncio.gather(
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
                 asyncio.to_thread(_transcribe, audio_path),
-                asyncio.to_thread(ocr_frames, _frames_dir(job_id), frame_names, fps),
+                asyncio.to_thread(_ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names),
             )
             transcript, segments = transcribe_result
-            overlay_text, overlay_segments = ocr_result
+            (overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments) = ocr_result
 
         shutil.rmtree(_frames_dir(job_id), ignore_errors=True)
+        shutil.rmtree(_hook_frames_dir(job_id), ignore_errors=True)
         # Keep audio_path on disk (temp/{job_id}/audio.mp3) — needed by the
         # /audio.mp3 endpoint and the inbox mirror for downstream voice
         # analysis (parselmouth/Praat, ElevenLabs cloning, etc.).
@@ -542,6 +597,8 @@ async def _process_job(job_id: str, url: str, fps: float) -> None:
             segments=segments,
             overlay_text=overlay_text or None,
             overlay_segments=overlay_segments or None,
+            hook_overlay_text=hook_overlay_text or None,
+            hook_overlay_segments=hook_overlay_segments or None,
         )
         _write_script(job_id)
         _write_audio(job_id)

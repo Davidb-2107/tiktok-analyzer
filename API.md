@@ -44,6 +44,12 @@ Transcription is automatic when the source has no captions (local faster-whisper
   // consumers must read them absent-safe (`j.overlay_text ?? null`, `j.overlay_segments ?? []`).
   "overlay_text":     "on-screen text, one deduplicated caption per line",
   "overlay_segments": [ { "start": 1.0, "end": 5.0, "text": "POV: ...", "confidence": 0.94 } ],
+  // Hook microscope: a denser 2fps OCR pass over the first 5s (HOOK_FPS / HOOK_WINDOW_S),
+  // where a video wins or loses attention — catches overlay captions that flash <1s and
+  // are missed by the 1fps main pass. Same shape/absent-safe rules as overlay_* (both null
+  // when nothing detected). Timestamps are seconds within the hook window.
+  "hook_overlay_text":     "opening on-screen text, one caption per line",
+  "hook_overlay_segments": [ { "start": 0.5, "end": 2.0, "text": "wait for it...", "confidence": 0.91 } ],
   "error":     null,                                      // string when status == "error"
   "project":   null,
   "user_tags": []
