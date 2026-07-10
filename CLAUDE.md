@@ -80,6 +80,9 @@ WHISPER_MODEL           # faster-whisper model (tiny/base/small/medium/large-v3)
 WHISPER_DEVICE          # cpu or cuda. Default: cpu
 WHISPER_COMPUTE_TYPE    # int8 (CPU recommended) or float16 (GPU). Default: int8
 HF_CACHE_DIR            # Host path mounted as /root/.cache/huggingface to reuse downloaded models
+HOOK_WINDOW_S           # Hook-microscope OCR pass window (seconds from start). Default: 5
+HOOK_FPS                # Hook-microscope OCR pass density. Default: 2
+WINDOW_FPS              # Frame density for a caller-requested start_s/end_s window. Default: 2
 ```
 
 ## Frontend Polling & Error Handling
