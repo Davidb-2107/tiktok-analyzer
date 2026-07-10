@@ -9,7 +9,10 @@ REST API. No auth required (Cloudflare Access is bypassed for this hostname).
 
 ## Flow
 
-1. `POST /analyze` with `{ "url": "<tiktok-or-youtube-url>", "fps": 1 }` → returns a `job_id`.
+1. `POST /analyze` with `{ "url": "<tiktok-or-youtube-url>" }` → returns a `job_id`.
+   `fps` is optional — omit it to let the server pick an adaptive frame budget
+   from the video's duration (denser for short videos, capped for long ones).
+   Optionally add `start_s`/`end_s` to analyze only a specific window (see below).
 2. Poll `GET /status/{job_id}` until `status` is `done` or `error`.
 3. Read `transcript`, `segments`, `frames` from the final status payload.
 
@@ -20,7 +23,7 @@ Transcription is automatic when the source has no captions (local faster-whisper
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/analyze` | Create a job. Body: `{ url, fps }` (fps optional, default 1). |
+| `POST` | `/analyze` | Create a job. Body: `{ url, fps?, start_s?, end_s? }`. `fps` omitted → adaptive. `start_s`/`end_s` → analyze only that window (denser sampling, skips the hook pass). |
 | `GET`  | `/status/{job_id}` | Poll job state (see schema below). |
 | `GET`  | `/jobs` | List all jobs. |
 | `DELETE` | `/jobs/{job_id}` | Delete job + its R2 objects. |
@@ -52,9 +55,31 @@ Transcription is automatic when the source has no captions (local faster-whisper
   "hook_overlay_segments": [ { "start": 0.5, "end": 2.0, "text": "wait for it...", "confidence": 0.91 } ],
   "error":     null,                                      // string when status == "error"
   "project":   null,
-  "user_tags": []
+  "user_tags": [],
+  "fps":       1.2,                                       // resolved fps (explicit or adaptive)
+  "start_s":   null,                                      // echoed back when a window was requested
+  "end_s":     null
 }
 ```
+
+## Adaptive frame budget + dedup
+
+Omit `fps` and the server picks a target frame count from the probed duration
+(~30 frames for ≤30s clips, up to ~100 for 10min+), then derives `fps` from
+it. Near-duplicate consecutive frames (e.g. a held title card) are dropped
+before OCR/upload — `frames` in the final payload may be fewer than
+`fps * duration`. Explicit `fps` still works exactly as before and is never
+overridden.
+
+## Focused time window
+
+Pass `start_s`/`end_s` to analyze only that slice of the video, sampled
+denser (`WINDOW_FPS`, default 2fps) than the main pass. `duration` in the
+response always reports the FULL source video length, not the window — the
+window is echoed back separately via `start_s`/`end_s`. A windowed job skips
+the full-video pass entirely and does **not** run the hook-microscope pass
+(`hook_overlay_text`/`hook_overlay_segments` are `null`) since the requested
+window already is the dense pass.
 
 ## Copy-paste client (Node, no deps)
 
@@ -62,14 +87,14 @@ Transcription is automatic when the source has no captions (local faster-whisper
 const BASE = "https://tiktok-analyzer.hen8n.com";
 const API_KEY = process.env.TT_API_KEY || ""; // set only if the server enforces a key
 
-async function analyze(url, { fps = 1, timeoutMs = 600000 } = {}) {
+async function analyze(url, { fps, start_s, end_s, timeoutMs = 600000 } = {}) {
   const r = await fetch(`${BASE}/analyze`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(API_KEY ? { "X-API-Key": API_KEY } : {}),
     },
-    body: JSON.stringify({ url, fps }),
+    body: JSON.stringify({ url, fps, start_s, end_s }),
   });
   if (!r.ok) throw new Error(`analyze failed: ${r.status}`);
   const { job_id } = await r.json();
@@ -101,3 +126,12 @@ async function analyze(url, { fps = 1, timeoutMs = 600000 } = {}) {
 - **Input guards:** `/analyze` only accepts hosts in the allowlist (`tiktok.com`,
   `youtube.com`, `youtu.be` by default) and rejects videos longer than the duration cap
   (`MAX_VIDEO_DURATION_SEC`, default 600s) — both return HTTP 422.
+
+## Claude Code skill
+
+`skills/analyze-video/` in this repo is a thin, stdlib-only client for this API,
+packaged as a Claude Code skill: `/analyze-video <url> [question] [--start S] [--end E]`
+downloads frames + transcript + overlay text locally and hands the frames to
+Claude's vision to answer grounded in what's on screen. To use it from ANY
+Claude Code session (not just this repo), copy or symlink the folder to
+`~/.claude/skills/analyze-video/`.
