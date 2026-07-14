@@ -96,9 +96,43 @@ def test_job_response_surfaces_overlay_fields():
     from main import JobResponse
 
     base = {"job_id": "x", "status": "done"}
-    r = JobResponse(**{**base, "overlay_text": "t", "overlay_segments": [{"text": "t"}]})
+    r = JobResponse(
+        **{**base, "overlay_text": "t", "overlay_segments": [{"text": "t"}]}
+    )
     assert r.overlay_text == "t"
     assert r.overlay_segments == [{"text": "t"}]
     r2 = JobResponse(**base)
     assert r2.overlay_text is None
     assert r2.overlay_segments is None
+
+
+def test_job_response_surfaces_voice_field():
+    """Load-bearing claim: JobResponse exposes `voice` when present, None sinon."""
+    import os
+
+    os.environ.setdefault("R2_ENDPOINT", "https://test.invalid")
+    for k in ("R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
+        os.environ.setdefault(k, "test")
+    pytest.importorskip("faster_whisper")
+    pytest.importorskip("yt_dlp")
+    from main import JobResponse
+
+    base = {"job_id": "x", "status": "done"}
+    voice_payload = {
+        "global": {
+            "f0_mean_hz": 180.0,
+            "f0_std_hz": 10.0,
+            "gender": "female",
+            "speech_rate_wps": 2.1,
+        },
+        "hook": {
+            "f0_mean_hz": 200.0,
+            "f0_std_hz": 12.0,
+            "gender": "female",
+            "speech_rate_wps": 3.0,
+        },
+    }
+    r = JobResponse(**{**base, "voice": voice_payload})
+    assert r.voice == voice_payload
+    r2 = JobResponse(**base)
+    assert r2.voice is None

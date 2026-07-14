@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from faster_whisper import WhisperModel
 from ocr import ocr_frames
+import voice
 from pydantic import BaseModel
 
 app = FastAPI(title="TikTok Analyzer")
@@ -412,6 +413,7 @@ class JobResponse(BaseModel):
     overlay_segments: list[dict] | None = None
     hook_overlay_text: str | None = None
     hook_overlay_segments: list[dict] | None = None
+    voice: dict | None = None
     project: str | None = None
     user_tags: list[str] = []
     fps: float | None = None
@@ -819,19 +821,33 @@ async def _run_job(
             transcript = await asyncio.to_thread(_fetch_captions, url, job_dir)
 
         segments: list[dict] = []
+        voice_metrics: dict | None = None
         if transcript or not transcribe:
+            gather_tasks = [
+                asyncio.to_thread(_upload_frames, job_id, frame_names),
+                asyncio.to_thread(
+                    _ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names
+                ),
+            ]
+            if transcribe:
+                gather_tasks.append(
+                    asyncio.to_thread(
+                        voice.analyze_voice,
+                        audio_path,
+                        segments,
+                        duration,
+                        HOOK_WINDOW_S,
+                    )
+                )
+            gather_results = await asyncio.gather(*gather_tasks)
             (
                 r2_keys,
                 (
                     (overlay_text, overlay_segments),
                     (hook_overlay_text, hook_overlay_segments),
                 ),
-            ) = await asyncio.gather(
-                asyncio.to_thread(_upload_frames, job_id, frame_names),
-                asyncio.to_thread(
-                    _ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names
-                ),
-            )
+            ) = gather_results[0], gather_results[1]
+            voice_metrics = gather_results[2] if transcribe else None
         else:
             # No captions: frames still local. Mark transcribing so the UI shows
             # progress, then fan out upload + Whisper concurrently.
@@ -848,6 +864,9 @@ async def _run_job(
                 (overlay_text, overlay_segments),
                 (hook_overlay_text, hook_overlay_segments),
             ) = ocr_result
+            voice_metrics = await asyncio.to_thread(
+                voice.analyze_voice, audio_path, segments, duration, HOOK_WINDOW_S
+            )
 
         shutil.rmtree(_frames_dir(job_id), ignore_errors=True)
         shutil.rmtree(_hook_frames_dir(job_id), ignore_errors=True)
@@ -864,6 +883,7 @@ async def _run_job(
             overlay_segments=overlay_segments or None,
             hook_overlay_text=hook_overlay_text or None,
             hook_overlay_segments=hook_overlay_segments or None,
+            voice=voice_metrics,
         )
         _write_script(job_id)
         _write_audio(job_id)
