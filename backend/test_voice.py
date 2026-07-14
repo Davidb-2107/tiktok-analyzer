@@ -111,13 +111,11 @@ def test_analyze_voice_pyin_error_is_survived(monkeypatch):
     assert voice.analyze_voice("clip.mp3", [], duration=10.0, hook_window_s=5.0) is None
 
 
-def test_analyze_voice_hook_window_capped_by_duration():
+def test_analyze_voice_hook_window_capped_by_duration(monkeypatch):
     """hook_window_s (5s) longer than duration (2s) must not slice past the
     clip end."""
     sr = 16000
     y = np.zeros(sr * 2, dtype=np.float32)
-
-    import voice as voice_mod
 
     def fake_load(*a, **kw):
         return y, sr
@@ -126,7 +124,7 @@ def test_analyze_voice_hook_window_capped_by_duration():
         n = len(y_slice)
         return np.full(n, 150.0), np.ones(n, dtype=bool), np.ones(n)
 
-    voice_mod.librosa.load = fake_load
-    voice_mod.librosa.pyin = fake_pyin
-    result = voice_mod.analyze_voice("clip.mp3", [], duration=2.0, hook_window_s=5.0)
+    monkeypatch.setattr(voice.librosa, "load", fake_load)
+    monkeypatch.setattr(voice.librosa, "pyin", fake_pyin)
+    result = voice.analyze_voice("clip.mp3", [], duration=2.0, hook_window_s=5.0)
     assert result["global"] == result["hook"]
