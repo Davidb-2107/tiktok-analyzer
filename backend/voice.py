@@ -76,18 +76,19 @@ def analyze_voice(
     duration: float,
     hook_window_s: float,
 ) -> dict | None:
-    """Global + hook-window prosody metrics. Returns None on any failure
-    (corrupt/empty audio, DSP error) — callers must never let this sink a
-    job, matching ocr_frames' own error-swallowing posture."""
+    """Global + hook-window prosody metrics. NEVER raises: the whole body is
+    guarded — corrupt/empty audio or a DSP error (e.g. pyin choking on
+    degenerate audio) all degrade to None, matching ocr_frames' own
+    error-swallowing posture."""
     try:
         y, sr = librosa.load(str(audio_path), sr=None, mono=True)
+        if y.size == 0:
+            return None
+        full_end = duration if duration else y.size / sr
+        hook_end = min(hook_window_s, full_end)
+        return {
+            "global": _window_metrics(y, sr, segments, 0.0, full_end),
+            "hook": _window_metrics(y, sr, segments, 0.0, hook_end),
+        }
     except Exception:
         return None
-    if y.size == 0:
-        return None
-    full_end = duration if duration else y.size / sr
-    hook_end = min(hook_window_s, full_end)
-    return {
-        "global": _window_metrics(y, sr, segments, 0.0, full_end),
-        "hook": _window_metrics(y, sr, segments, 0.0, hook_end),
-    }

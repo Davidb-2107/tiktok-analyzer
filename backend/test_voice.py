@@ -97,6 +97,20 @@ def test_analyze_voice_wires_global_and_hook(monkeypatch):
     assert result["global"]["speech_rate_wps"] == pytest.approx(0.1)
 
 
+def test_analyze_voice_pyin_error_is_survived(monkeypatch):
+    """DSP errors past a successful load (e.g. pyin choking on degenerate
+    audio) must also degrade to None, not propagate."""
+    sr = 16000
+    y = np.zeros(sr * 10, dtype=np.float32)
+    monkeypatch.setattr(voice.librosa, "load", lambda *a, **kw: (y, sr))
+
+    def boom(*a, **kw):
+        raise RuntimeError("pyin choked")
+
+    monkeypatch.setattr(voice.librosa, "pyin", boom)
+    assert voice.analyze_voice("clip.mp3", [], duration=10.0, hook_window_s=5.0) is None
+
+
 def test_analyze_voice_hook_window_capped_by_duration():
     """hook_window_s (5s) longer than duration (2s) must not slice past the
     clip end."""
