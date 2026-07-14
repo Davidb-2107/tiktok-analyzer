@@ -18,6 +18,8 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_BASE_URL = "https://tiktok-analyzer.hen8n.com"
+# Cloudflare blocks the default Python-urllib/3.x UA (403 error 1010); any other value passes.
+USER_AGENT = "analyze-video-skill/1.0"
 POLL_INTERVAL_S = 4
 TIMEOUT_S = 1800  # covers server-side queue wait (jobs may sit pending behind 2 slots)
 
@@ -28,6 +30,7 @@ def _request(
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("content-type", "application/json")
+    req.add_header("user-agent", USER_AGENT)
     if api_key:
         req.add_header("X-API-Key", api_key)
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -35,7 +38,8 @@ def _request(
 
 
 def _download(url: str, dest: Path) -> None:
-    with urllib.request.urlopen(url, timeout=60) as resp, open(dest, "wb") as f:
+    req = urllib.request.Request(url, headers={"user-agent": USER_AGENT})
+    with urllib.request.urlopen(req, timeout=60) as resp, open(dest, "wb") as f:
         f.write(resp.read())
 
 
