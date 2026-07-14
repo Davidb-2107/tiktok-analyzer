@@ -42,6 +42,8 @@ pending → downloading → extracting → frames_ready → done (captions found
 ```
 Transcription is automatic when no captions are found in the source — no manual gate. The job blocks on Whisper for ~2-3× realtime on CPU/int8/medium.
 
+Jobs beyond `MAX_CONCURRENT_JOBS` queue in-memory (status stays `pending` until a slot frees); `/analyze` only 429s when the non-terminal backlog reaches `MAX_PENDING_JOBS`. On startup, jobs left non-terminal by a restart are swept to `error`. If a job carries a `webhook_url`, the final payload is POSTed there when it reaches `done`/`error` (best-effort).
+
 Job metadata is persisted to `temp/{job_id}/job.json`. The `temp/` directory is Docker-volume-mounted so it survives container restarts.
 
 ## Using the Live API
@@ -52,7 +54,9 @@ The service is **deployed and public** at `https://tiktok-analyzer.hen8n.com` (n
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/analyze` | Create job (`{ url, fps }`) |
+| `POST` | `/analyze` | Create job (`{ url, fps?, project?, start_s?, end_s?, webhook_url?, transcribe? }`) — full body schema in `API.md` |
+| `POST` | `/analyze/batch` | Create up to 20 jobs (`{ urls, fps?, project?, webhook_url?, transcribe? }`) — per-URL failures land in `rejected` |
+| `GET` | `/channel/top` | Top-N videos of a channel by views (`?url=&n=`) |
 | `GET` | `/status/{job_id}` | Poll job status |
 | `GET` | `/jobs` | List all jobs |
 | `DELETE` | `/jobs/{job_id}` | Delete job + R2 objects |
@@ -72,13 +76,16 @@ All secrets live in `.env` (not committed). Required keys:
 R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
 R2_BUCKET, R2_ENDPOINT
 ALLOWED_ORIGIN          # CORS origin (use * for dev)
-MAX_CONCURRENT_JOBS     # Default: 2
+MAX_CONCURRENT_JOBS     # Jobs processed in parallel; extra jobs queue as "pending". Default: 2
+MAX_PENDING_JOBS        # Backlog cap: /analyze 429s once this many jobs are non-terminal. Default: 20
 API_KEY                 # Optional shared secret. When set, mutating requests (POST/DELETE) require header X-API-Key: <key>. GET stays open. Empty = fully open (dev).
 ALLOWED_VIDEO_DOMAINS   # Comma-separated host allowlist for /analyze (subdomains OK). Default: tiktok.com,youtube.com,youtu.be. Empty disables the check.
 MAX_VIDEO_DURATION_SEC  # Reject videos longer than this (probed before download). Default: 600. 0 disables the cap.
+MAX_NOTRANSCRIBE_DURATION_SEC  # Duration cap for transcribe=false jobs (frames+OCR only). Default: 1800. 0 disables.
 WHISPER_MODEL           # faster-whisper model (tiny/base/small/medium/large-v3). Default: medium
 WHISPER_DEVICE          # cpu or cuda. Default: cpu
 WHISPER_COMPUTE_TYPE    # int8 (CPU recommended) or float16 (GPU). Default: int8
+WHISPER_BEAM_SIZE       # Beam search width. Default: 5 (raise to 10 for hard audio)
 HF_CACHE_DIR            # Host path mounted as /root/.cache/huggingface to reuse downloaded models
 HOOK_WINDOW_S           # Hook-microscope OCR pass window (seconds from start). Default: 5
 HOOK_FPS                # Hook-microscope OCR pass density. Default: 2

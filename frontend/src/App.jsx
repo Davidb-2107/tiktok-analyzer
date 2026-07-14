@@ -158,6 +158,10 @@ export default function App() {
         ? data.frames.map(name => `${API}/frames/${data.job_id}/local/${name}`)
         : data.frames
       setFrames(urls)
+    } else {
+      // Frameless job (errored early, still pending): clear instead of
+      // keeping the previously selected job's gallery on screen.
+      setFrames([])
     }
   }
 
@@ -181,10 +185,50 @@ export default function App() {
     setJobId(data.job_id)
   }
 
-  const handleSelectHistory = (job) => {
+  const handleAnalyzeBatch = async (urls, fps, project) => {
+    try {
+      const res = await fetch(`${API}/analyze/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls, fps, project }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        showToast(`Batch failed: ${data.detail || `HTTP ${res.status}`}`)
+        return
+      }
+      const rejected = data.rejected?.length
+        ? ` — ${data.rejected.length} rejected (${data.rejected.map(r => r.reason)[0]})`
+        : ''
+      showToast(`${data.jobs.length} jobs queued${rejected}`)
+      loadHistory()
+    } catch (err) {
+      showToast(`Batch failed: ${err.message || err}`)
+    }
+  }
+
+  // Bumped on every history select so the polling effect re-runs even when
+  // the same job_id is clicked again (setJobId with an identical value would
+  // otherwise bail out and leave polling stopped forever).
+  const [pollEpoch, setPollEpoch] = useState(0)
+  const selectedRef = useRef(null)
+
+  const handleSelectHistory = async (job) => {
     stopPolling()
+    selectedRef.current = job.job_id
     setJobId(job.job_id)
-    applyJobData(job)
+    setPollEpoch(e => e + 1)
+    // Re-fetch instead of reusing the cached history entry: its presigned R2
+    // URLs go stale after 1h (PRESIGN_TTL) if the tab stays open.
+    try {
+      const res = await fetch(`${API}/status/${job.job_id}`)
+      const data = res.ok ? await res.json() : job
+      // Discard if the user selected another job while this fetch was in
+      // flight — a slow response must not overwrite the newer selection.
+      if (selectedRef.current === job.job_id) applyJobData(data)
+    } catch {
+      if (selectedRef.current === job.job_id) applyJobData(job)
+    }
   }
 
   const handleBack = () => {
@@ -241,7 +285,7 @@ export default function App() {
     }, 500)
 
     return stopPolling
-  }, [jobId])
+  }, [jobId, pollEpoch])
 
   const isProcessing = jobStatus && !['done', 'error', 'frames_ready'].includes(jobStatus.status)
 
@@ -390,7 +434,7 @@ export default function App() {
           )}
         </div>
       ) : (
-        <UrlInput onSubmit={handleAnalyze} disabled={isProcessing} />
+        <UrlInput onSubmit={handleAnalyze} onSubmitBatch={handleAnalyzeBatch} disabled={isProcessing} />
       )}
       {jobStatus && <StatusIndicator status={jobStatus} />}
       {jobId && jobStatus && (
@@ -403,6 +447,12 @@ export default function App() {
       )}
       {frames.length > 0 && <FrameGallery frames={frames} />}
       {jobStatus?.transcript && <Transcript text={jobStatus.transcript} />}
+      {jobStatus?.hook_overlay_text && (
+        <Transcript title="Hook — on-screen text, first seconds (OCR)" text={jobStatus.hook_overlay_text} />
+      )}
+      {jobStatus?.overlay_text && (
+        <Transcript title="On-screen text (OCR)" text={jobStatus.overlay_text} />
+      )}
       <JobHistory
         jobs={history}
         onSelect={handleSelectHistory}

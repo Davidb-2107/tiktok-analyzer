@@ -23,7 +23,9 @@ Transcription is automatic when the source has no captions (local faster-whisper
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/analyze` | Create a job. Body: `{ url, fps?, start_s?, end_s? }`. `fps` omitted → adaptive. `start_s`/`end_s` → analyze only that window (denser sampling, skips the hook pass). |
+| `POST` | `/analyze` | Create a job. Body: `{ url, fps?, start_s?, end_s?, webhook_url?, transcribe? }`. `fps` omitted → adaptive. `start_s`/`end_s` → analyze only that window (denser sampling, skips the hook pass). `webhook_url` → final payload POSTed there on `done`/`error`. `transcribe: false` → frames + OCR only (no Whisper/captions/audio; `transcript` stays null), with a looser duration cap (`MAX_NOTRANSCRIBE_DURATION_SEC`, default 1800s) for long footage QC. |
+| `POST` | `/analyze/batch` | Create up to 20 jobs at once. Body: `{ urls, fps?, project?, webhook_url?, transcribe? }`. Returns `{ jobs: [{url, job_id}], rejected: [{url, reason}] }` — invalid/over-cap URLs are rejected per-URL, the rest proceed. |
+| `GET`  | `/channel/top?url=<channel-url>&n=10` | Top-N videos of a channel/profile page by view count (`{ channel, enumerated, top: [{url, title, views, duration}] }`). Entry point of the format-study chain. |
 | `GET`  | `/status/{job_id}` | Poll job state (see schema below). |
 | `GET`  | `/jobs` | List all jobs. |
 | `DELETE` | `/jobs/{job_id}` | Delete job + its R2 objects. |
@@ -119,13 +121,22 @@ async function analyze(url, { fps, start_s, end_s, timeoutMs = 600000 } = {}) {
 - `frames` are local paths (`/frames/{job_id}/local/{name}`) during processing, then switch to
   absolute presigned R2 URLs after upload — handle both shapes.
 - Transcription language is auto-detected (e.g. French).
-- Audio is retained: `GET /jobs/{job_id}/audio.mp3` works after the job is done.
+- Audio is retained: `GET /jobs/{job_id}/audio.mp3` works after the job is done —
+  except `transcribe:false` jobs, which never extract audio (404).
 - **Auth:** if the server sets `API_KEY`, mutating requests (`POST /analyze`, `DELETE`)
   require header `X-API-Key: <key>`; `GET` reads stay open. With no `API_KEY` set the
   endpoint is fully open.
 - **Input guards:** `/analyze` only accepts hosts in the allowlist (`tiktok.com`,
   `youtube.com`, `youtu.be` by default) and rejects videos longer than the duration cap
   (`MAX_VIDEO_DURATION_SEC`, default 600s) — both return HTTP 422.
+- **Queue:** jobs beyond `MAX_CONCURRENT_JOBS` (default 2) queue server-side — status
+  stays `pending` until a slot frees. `/analyze` returns 429 only when the total
+  non-terminal backlog reaches `MAX_PENDING_JOBS` (default 20). Queued jobs do not
+  survive a server restart (swept to `error` at startup).
+- **Webhook:** pass `webhook_url` (public http(s) only — localhost/private IPs are
+  rejected 422) and the server POSTs the full final job payload (same shape as
+  `/status`) to it when the job reaches `done` or `error`. Delivery is best-effort,
+  one attempt, 10s timeout — poll `/status` as fallback if you miss it.
 
 ## Claude Code skill
 

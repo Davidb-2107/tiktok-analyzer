@@ -19,7 +19,7 @@ from pathlib import Path
 
 DEFAULT_BASE_URL = "https://tiktok-analyzer.hen8n.com"
 POLL_INTERVAL_S = 4
-TIMEOUT_S = 600
+TIMEOUT_S = 1800  # covers server-side queue wait (jobs may sit pending behind 2 slots)
 
 
 def _request(
