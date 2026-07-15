@@ -55,6 +55,15 @@ Transcription is automatic when the source has no captions (local faster-whisper
   // when nothing detected). Timestamps are seconds within the hook window.
   "hook_overlay_text":     "opening on-screen text, one caption per line",
   "hook_overlay_segments": [ { "start": 0.5, "end": 2.0, "text": "wait for it...", "confidence": 0.91 } ],
+  // Voice/prosody analysis (librosa): pitch + speech rate, over the whole clip
+  // ("global") and over the same hook window as hook_overlay_* ("hook"). null
+  // when transcribe:false (no audio extracted). speech_rate_wps is null when
+  // the source had native captions (no Whisper word timing to compute it from)
+  // — pitch/gender are still populated in that case.
+  "voice": {
+    "global": { "f0_mean_hz": 187.3, "f0_std_hz": 34.1, "gender": "female", "speech_rate_wps": 2.4 },
+    "hook":   { "f0_mean_hz": 210.5, "f0_std_hz": 41.2, "gender": "female", "speech_rate_wps": 3.1 }
+  },
   "error":     null,                                      // string when status == "error"
   "project":   null,
   "user_tags": [],
@@ -137,6 +146,10 @@ async function analyze(url, { fps, start_s, end_s, timeoutMs = 600000 } = {}) {
   rejected 422) and the server POSTs the full final job payload (same shape as
   `/status`) to it when the job reaches `done` or `error`. Delivery is best-effort,
   one attempt, 10s timeout — poll `/status` as fallback if you miss it.
+- **Voice/prosody:** `gender` is a heuristic F0 threshold (165Hz), not a trained
+  classifier — treat it as approximate. `f0_std_hz` is pitch variance (monotone
+  vs. expressive); comparing `hook` vs `global` surfaces whether a video's
+  hook is vocally more intense than the rest.
 
 ## Claude Code skill
 
