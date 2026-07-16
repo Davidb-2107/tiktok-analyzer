@@ -8,6 +8,13 @@ __pycache__/
 node_modules/
 dist/
 
+# claude-mem session-memory context snapshot — auto-regenerated on every
+# claude-mem event with a fresh timestamp + token counter. Not source code;
+# tracking it churns a commit every time (same rationale as the vault's own
+# AGENTS.md exclusion for Psycho/Niche_PC/Stickman).
+AGENTS.md
+backend/AGENTS.md
+
 # Throwaway dev scripts (never deployed)
 _test_*.py
 _backfill_*.py
