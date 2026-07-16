@@ -1,0 +1,61 @@
+---
+config:
+  theme: neutral
+---
+flowchart TD
+    URL([URL TikTok / YouTube]):::input
+
+    subgraph ENGINE["🎥 Moteur commun — TikTok Analyzer API"]
+        direction TB
+        ANALYZE["POST /analyze
+        download → frames → transcript?"]
+        TOP["GET /channel/top
+        top vidéos par vues"]
+        STATUS["GET /status/{job_id}
+        polling → done/error"]
+        TOP --> ANALYZE --> STATUS
+    end
+
+    URL --> TOP
+
+    STATUS --> SPLIT{{"transcribe flag"}}
+
+    %% ---------- Chemin 1 : Sourcing ----------
+    subgraph SOURCING["🅰️ Chemin 1 — Sourcing footage"]
+        direction TB
+        S1["transcribe:false
+        frames + OCR only (rapide/économe)"]
+        S2["QC visuelle candidats
+        (review_assist.py — à construire)"]
+        S3["Footage validé
+        → banque de plans réutilisables"]
+        S1 --> S2 --> S3
+    end
+
+    %% ---------- Chemin 2 : Format-study ----------
+    subgraph FORMATSTUDY["🅱️ Chemin 2 — Étude de format"]
+        direction TB
+        F1["transcribe:true
+        frames + OCR + transcript complet"]
+        F2["/extract-format skill
+        style, caméra, réalisme, hook 0-3s"]
+        F3["📄 Fiche format
+        Projects/Sourcing/formats/*.md"]
+        F4["Twist créatif
+        (le fil qu'on ajoute au format)"]
+        F1 --> F2 --> F3 --> F4
+    end
+
+    SPLIT -->|false| S1
+    SPLIT -->|true| F1
+
+    %% ---------- Objectif final ----------
+    F4 --> HIGGS["🎬 Recréation
+    Higgsfield / CapCut"]
+    S3 -.->|"footage brut réutilisé dans"| HIGGS
+
+    HIGGS --> GOAL(["Objectif : vidéo TikTok publiée,
+    inspirée d'un format qui marche déjà"]):::goal
+
+    classDef input fill:#e0e7ff,stroke:#4338ca
+    classDef goal fill:#dcfce7,stroke:#16a34a,stroke-width:2px
