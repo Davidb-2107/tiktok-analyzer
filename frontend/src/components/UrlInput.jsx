@@ -1,21 +1,28 @@
 import { useState } from 'react'
 
-export default function UrlInput({ onSubmit, onSubmitBatch, disabled }) {
+export default function UrlInput({ onSubmit, onSubmitBatch, onSubmitChannel, disabled }) {
   const [url, setUrl] = useState('')
+  const [topN, setTopN] = useState(5)
   const [fps, setFps] = useState('auto')
   const [project, setProject] = useState('psycho')
-  const [batch, setBatch] = useState(false)
+  const [mode, setMode] = useState('single') // 'single' | 'batch' | 'channel'
 
   const handleSubmit = (e) => {
     e.preventDefault()
     const proj = project === 'none' ? null : project
     // 'auto' -> fps null: the backend picks an adaptive frame budget from duration
     const fpsVal = fps === 'auto' ? null : Number(fps)
-    if (batch) {
+    if (mode === 'batch') {
       const urls = url.split('\n').map(u => u.trim()).filter(Boolean)
       if (urls.length) {
         onSubmitBatch(urls, fpsVal, proj)
         setUrl('')
+      }
+    } else if (mode === 'channel') {
+      if (url.trim()) {
+        // Same cap as /analyze/batch's 20-URL limit.
+        const n = Math.max(1, Math.min(20, Number(topN) || 5))
+        onSubmitChannel(url.trim(), n, fpsVal, proj)
       }
     } else if (url.trim()) {
       onSubmit(url.trim(), fpsVal, proj)
@@ -33,9 +40,26 @@ export default function UrlInput({ onSubmit, onSubmitBatch, disabled }) {
     fontSize: '0.95rem',
   }
 
+  const modeButtonStyle = (active) => ({
+    padding: '0.6rem 0.75rem',
+    borderRadius: '6px',
+    border: '1px solid #333',
+    background: active ? '#2a2a2a' : '#1a1a1a',
+    color: active ? '#f0f0f0' : '#888',
+    cursor: 'pointer',
+    fontSize: '0.95rem',
+  })
+
+  const toggleMode = (next) => {
+    // Leaving batch mode: keep only the first line — the hidden \n would
+    // otherwise survive in state and be submitted inside one URL.
+    if (mode === 'batch' && next !== 'batch') setUrl(u => u.split('\n')[0].trim())
+    setMode(m => (m === next ? 'single' : next))
+  }
+
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-      {batch ? (
+      {mode === 'batch' ? (
         <textarea
           placeholder={'One URL per line (max 20)\nhttps://www.tiktok.com/@user/video/...\nhttps://www.tiktok.com/@user/video/...'}
           value={url}
@@ -48,7 +72,11 @@ export default function UrlInput({ onSubmit, onSubmitBatch, disabled }) {
       ) : (
         <input
           type="url"
-          placeholder="https://www.tiktok.com/@user/video/..."
+          placeholder={
+            mode === 'channel'
+              ? 'https://www.tiktok.com/@channel (profile URL)'
+              : 'https://www.tiktok.com/@user/video/...'
+          }
           value={url}
           onChange={e => setUrl(e.target.value)}
           disabled={disabled}
@@ -56,27 +84,35 @@ export default function UrlInput({ onSubmit, onSubmitBatch, disabled }) {
           style={inputStyle}
         />
       )}
+      {mode === 'channel' && (
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={topN}
+          onChange={e => setTopN(e.target.value)}
+          disabled={disabled}
+          title="Top N videos by views (max 20)"
+          style={{ ...inputStyle, flex: '0 0 90px', minWidth: '90px' }}
+        />
+      )}
       <button
         type="button"
-        onClick={() => {
-          // Leaving batch mode: keep only the first line — the hidden \n
-          // would otherwise survive in state and be submitted inside one URL.
-          if (batch) setUrl(u => u.split('\n')[0].trim())
-          setBatch(b => !b)
-        }}
+        onClick={() => toggleMode('batch')}
         disabled={disabled}
         title="Toggle batch mode: submit several URLs at once (one per line)"
-        style={{
-          padding: '0.6rem 0.75rem',
-          borderRadius: '6px',
-          border: '1px solid #333',
-          background: batch ? '#2a2a2a' : '#1a1a1a',
-          color: batch ? '#f0f0f0' : '#888',
-          cursor: 'pointer',
-          fontSize: '0.95rem',
-        }}
+        style={modeButtonStyle(mode === 'batch')}
       >
         Batch
+      </button>
+      <button
+        type="button"
+        onClick={() => toggleMode('channel')}
+        disabled={disabled}
+        title="Toggle channel mode: fetch a channel's top-N videos by views"
+        style={modeButtonStyle(mode === 'channel')}
+      >
+        Channel
       </button>
       <select
         value={fps}

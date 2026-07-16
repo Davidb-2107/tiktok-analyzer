@@ -7,6 +7,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import urllib.parse
 import urllib.request
 import uuid
@@ -15,17 +16,26 @@ from pathlib import Path
 from typing import Literal
 
 import boto3
+import voice
 import yt_dlp
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from faster_whisper import WhisperModel
 from ocr import ocr_frames
-import voice
 from pydantic import BaseModel
 
 app = FastAPI(title="TikTok Analyzer")
 logger = logging.getLogger("tiktok-analyzer")
+
+# Local-dev-only bridge into the Wiki_Claude vault's Sourcing transcript
+# registry — mounted at /sourcing/tools by docker-compose.yml (never in
+# docker-compose.prod.yml, so this stays None on the public VPS deployment).
+try:
+    sys.path.insert(0, "/sourcing/tools")
+    import transcript_registry
+except ImportError:
+    transcript_registry = None
 
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
 # Backlog cap: jobs beyond MAX_CONCURRENT_JOBS now QUEUE (status stays
@@ -47,18 +57,14 @@ _job_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 _DEFAULT_ALLOWED_DOMAINS = "tiktok.com,youtube.com,youtu.be"
 ALLOWED_VIDEO_DOMAINS = {
     d.strip().lower()
-    for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(
-        ","
-    )
+    for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(",")
     if d.strip()
 }
 # Reject videos longer than this (seconds) before downloading. 0 disables the cap.
 MAX_VIDEO_DURATION_SEC = int(os.environ.get("MAX_VIDEO_DURATION_SEC", "600"))
 # Looser cap for transcribe=false jobs (frames+OCR only, no Whisper) — long
 # YouTube masters for the Sourcing review funnel. 0 disables.
-MAX_NOTRANSCRIBE_DURATION_SEC = int(
-    os.environ.get("MAX_NOTRANSCRIBE_DURATION_SEC", "1800")
-)
+MAX_NOTRANSCRIBE_DURATION_SEC = int(os.environ.get("MAX_NOTRANSCRIBE_DURATION_SEC", "1800"))
 
 # Optional shared secret. When set, mutating requests (POST/DELETE) must carry an
 # X-API-Key header matching it. GET stays open so the SPA/polling and read-only
@@ -71,24 +77,13 @@ _PROTECTED_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # still carry CORS headers (browsers can then read the error body).
 @app.middleware("http")
 async def _api_key_guard(request, call_next):
-    if (
-        API_KEY
-        and request.method in _PROTECTED_METHODS
-        and request.headers.get("X-API-Key") != API_KEY
-    ):
-        return JSONResponse(
-            status_code=401, content={"detail": "Invalid or missing X-API-Key."}
-        )
+    if API_KEY and request.method in _PROTECTED_METHODS and request.headers.get("X-API-Key") != API_KEY:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or missing X-API-Key."})
     return await call_next(request)
 
 
 _allowed_origin = os.environ.get("ALLOWED_ORIGIN", "*")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[_allowed_origin],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=[_allowed_origin], allow_methods=["*"], allow_headers=["*"])
 
 TEMP_DIR = Path("/app/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -223,24 +218,16 @@ def _inbox_dir_for_project(project: str | None) -> str | None:
 
 
 _TIKTOK_URL_RE = re.compile(r"tiktok\.com/@([^/?]+)/video/(\d+)")
-_YOUTUBE_URL_RE = re.compile(
-    r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))([\w-]+)"
-)
+_YOUTUBE_URL_RE = re.compile(r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))([\w-]+)")
 # Instagram URLs: optional username segment before reel/p/tv
 # Examples: instagram.com/reel/CxYz/, instagram.com/joe.doe/reel/CxYz/
-_INSTAGRAM_URL_RE = re.compile(
-    r"instagram\.com/(?:([\w.]+)/)?(?:reel|reels|p|tv)/([\w-]+)"
-)
+_INSTAGRAM_URL_RE = re.compile(r"instagram\.com/(?:([\w.]+)/)?(?:reel|reels|p|tv)/([\w-]+)")
 
 
 def _parse_source(url: str) -> dict:
     m = _TIKTOK_URL_RE.search(url or "")
     if m:
-        return {
-            "platform": "tiktok",
-            "author": f"@{m.group(1)}",
-            "video_id": m.group(2),
-        }
+        return {"platform": "tiktok", "author": f"@{m.group(1)}", "video_id": m.group(2)}
     m = _INSTAGRAM_URL_RE.search(url or "")
     if m:
         author = f"@{m.group(1)}" if m.group(1) else "unknown"
@@ -275,12 +262,7 @@ def _build_script_text(job: dict) -> str:
     ]
     # Engagement metrics from yt-dlp at download time. Lines omitted when
     # the platform/account did not expose the metric (Insta private, etc.).
-    metric_labels = [
-        ("views", "VIEWS"),
-        ("likes", "LIKES"),
-        ("comments", "COMMENTS"),
-        ("shares", "SHARES"),
-    ]
+    metric_labels = [("views", "VIEWS"), ("likes", "LIKES"), ("comments", "COMMENTS"), ("shares", "SHARES")]
     metrics = job.get("metrics") or {}
     for key, label in metric_labels:
         v = metrics.get(key)
@@ -368,15 +350,7 @@ def _write_audio(job_id: str) -> None:
     shutil.copy2(src, inbox / filename)
 
 
-JobStatus = Literal[
-    "pending",
-    "downloading",
-    "extracting",
-    "frames_ready",
-    "transcribing",
-    "done",
-    "error",
-]
+JobStatus = Literal["pending", "downloading", "extracting", "frames_ready", "transcribing", "done", "error"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -427,6 +401,13 @@ class JobResponse(BaseModel):
 
 class UserTagsRequest(BaseModel):
     tags: list[str] = []
+
+
+class SaveTranscriptRequest(BaseModel):
+    niche: str
+    channel: str | None = None
+    title: str | None = None
+    views: int | None = None
 
 
 def _job_file(job_id: str) -> Path:
@@ -488,9 +469,7 @@ def _resolve_frames(job_id: str, job: dict) -> dict:
     return job
 
 
-def _download_video(
-    url: str, output_path: Path
-) -> tuple[Path, float, str | None, dict]:
+def _download_video(url: str, output_path: Path) -> tuple[Path, float, str | None, dict]:
     ydl_opts = {
         "format": "best[height<=1080]/best[ext=mp4]/best",
         "outtmpl": str(output_path / "%(id)s.%(ext)s"),
@@ -506,11 +485,7 @@ def _download_video(
         uploader = next(
             (
                 v
-                for v in (
-                    info.get("uploader_id"),
-                    info.get("uploader"),
-                    info.get("channel"),
-                )
+                for v in (info.get("uploader_id"), info.get("uploader"), info.get("channel"))
                 if v and not str(v).isdigit()
             ),
             None,
@@ -550,11 +525,7 @@ def _extract_audio(video_path: Path, audio_path: Path) -> None:
 
 
 def _extract_frames(
-    video_path: Path,
-    out_dir: Path,
-    fps: float,
-    limit_s: float | None = None,
-    start_s: float | None = None,
+    video_path: Path, out_dir: Path, fps: float, limit_s: float | None = None, start_s: float | None = None
 ) -> list[str]:
     out_dir.mkdir(parents=True, exist_ok=True)
     output_pattern = str(out_dir / "frame_%03d.jpg")
@@ -593,10 +564,7 @@ def _extract_frames(
     result = run([])
     if result.returncode != 0 and "Invalid color space" in result.stderr:
         result = run(
-            [
-                "-bsf:v",
-                "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1",
-            ]
+            ["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
         )
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr}")
@@ -619,9 +587,7 @@ def _hamming(a: int, b: int) -> int:
     return bin(a ^ b).count("1")
 
 
-def _dedup_frames(
-    out_dir: Path, frame_names: list[str], max_hamming: int = 4
-) -> list[str]:
+def _dedup_frames(out_dir: Path, frame_names: list[str], max_hamming: int = 4) -> list[str]:
     """Drop consecutive near-duplicate frames (aHash Hamming distance <=
     max_hamming) before OCR/upload — a held title card or static slide
     shouldn't bill as N separate frames. Keeps order, always keeps the first
@@ -639,9 +605,7 @@ def _dedup_frames(
             prev_hash = h
         dropped = len(frame_names) - len(kept)
         if dropped:
-            logger.info(
-                "dedup: dropped %d/%d near-duplicate frames", dropped, len(frame_names)
-            )
+            logger.info("dedup: dropped %d/%d near-duplicate frames", dropped, len(frame_names))
         return kept
     except Exception:
         logger.exception("dedup: hashing failed, keeping all frames")
@@ -676,12 +640,7 @@ def _parse_vtt(vtt: str) -> str:
     text_lines = []
     for line in lines:
         line = line.strip()
-        if (
-            not line
-            or line.startswith("WEBVTT")
-            or "-->" in line
-            or re.match(r"^\d+$", line)
-        ):
+        if not line or line.startswith("WEBVTT") or "-->" in line or re.match(r"^\d+$", line):
             continue
         clean = re.sub(r"<[^>]+>", "", line)
         if clean and (not text_lines or clean != text_lines[-1]):
@@ -695,9 +654,7 @@ def _upload_frames(job_id: str, frame_names: list[str]) -> list[str]:
     src_dir = _frames_dir(job_id)
     for name in frame_names:
         key = f"{job_id}/{name}"
-        s3.upload_file(
-            str(src_dir / name), R2_BUCKET, key, ExtraArgs={"ContentType": "image/jpeg"}
-        )
+        s3.upload_file(str(src_dir / name), R2_BUCKET, key, ExtraArgs={"ContentType": "image/jpeg"})
         keys.append(key)
     return keys
 
@@ -743,9 +700,7 @@ async def _run_job(
 
     try:
         _update_job(job_id, status="downloading")
-        video_path, duration, uploader, metrics = await asyncio.to_thread(
-            _download_video, url, job_dir
-        )
+        video_path, duration, uploader, metrics = await asyncio.to_thread(_download_video, url, job_dir)
 
         audio_path = _audio_path(job_id)
         if transcribe:
@@ -766,34 +721,19 @@ async def _run_job(
             span = max(w_end - w_start, 1.0)
             fps = min(WINDOW_FPS, 240 / span)
             frame_names = await asyncio.to_thread(
-                _extract_frames,
-                video_path,
-                _frames_dir(job_id),
-                fps,
-                span,
-                w_start,
+                _extract_frames, video_path, _frames_dir(job_id), fps, span, w_start
             )
-            frame_names = await asyncio.to_thread(
-                _dedup_frames, _frames_dir(job_id), frame_names
-            )
+            frame_names = await asyncio.to_thread(_dedup_frames, _frames_dir(job_id), frame_names)
             hook_frame_names: list[str] = []
         else:
-            frame_names = await asyncio.to_thread(
-                _extract_frames, video_path, _frames_dir(job_id), fps
-            )
-            frame_names = await asyncio.to_thread(
-                _dedup_frames, _frames_dir(job_id), frame_names
-            )
+            frame_names = await asyncio.to_thread(_extract_frames, video_path, _frames_dir(job_id), fps)
+            frame_names = await asyncio.to_thread(_dedup_frames, _frames_dir(job_id), frame_names)
             # Hook microscope: denser 2fps pass over the first HOOK_WINDOW_S seconds.
             # Best-effort — an ffmpeg failure here must NEVER sink the job (the main
             # frames + transcript are what matter), so we swallow it to an empty set.
             try:
                 hook_frame_names = await asyncio.to_thread(
-                    _extract_frames,
-                    video_path,
-                    _hook_frames_dir(job_id),
-                    HOOK_FPS,
-                    HOOK_WINDOW_S,
+                    _extract_frames, video_path, _hook_frames_dir(job_id), HOOK_FPS, HOOK_WINDOW_S
                 )
             except Exception:
                 hook_frame_names = []
@@ -825,28 +765,17 @@ async def _run_job(
         if transcript or not transcribe:
             gather_tasks = [
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
-                asyncio.to_thread(
-                    _ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names
-                ),
+                asyncio.to_thread(_ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names),
             ]
             if transcribe:
                 gather_tasks.append(
-                    asyncio.to_thread(
-                        voice.analyze_voice,
-                        audio_path,
-                        segments,
-                        duration,
-                        HOOK_WINDOW_S,
-                    )
+                    asyncio.to_thread(voice.analyze_voice, audio_path, segments, duration, HOOK_WINDOW_S)
                 )
             gather_results = await asyncio.gather(*gather_tasks)
-            (
-                r2_keys,
-                (
-                    (overlay_text, overlay_segments),
-                    (hook_overlay_text, hook_overlay_segments),
-                ),
-            ) = gather_results[0], gather_results[1]
+            (r2_keys, ((overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments))) = (
+                gather_results[0],
+                gather_results[1],
+            )
             voice_metrics = gather_results[2] if transcribe else None
         else:
             # No captions: frames still local. Mark transcribing so the UI shows
@@ -855,15 +784,10 @@ async def _run_job(
             r2_keys, transcribe_result, ocr_result = await asyncio.gather(
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
                 asyncio.to_thread(_transcribe, audio_path),
-                asyncio.to_thread(
-                    _ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names
-                ),
+                asyncio.to_thread(_ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names),
             )
             transcript, segments = transcribe_result
-            (
-                (overlay_text, overlay_segments),
-                (hook_overlay_text, hook_overlay_segments),
-            ) = ocr_result
+            ((overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments)) = ocr_result
             voice_metrics = await asyncio.to_thread(
                 voice.analyze_voice, audio_path, segments, duration, HOOK_WINDOW_S
             )
@@ -924,8 +848,7 @@ def _validate_url_domain(url: str) -> None:
     host = parsed.hostname.lower()
     if not any(host == d or host.endswith("." + d) for d in ALLOWED_VIDEO_DOMAINS):
         raise HTTPException(
-            status_code=422,
-            detail=f"Domain '{host}' not allowed. Allowed: {sorted(ALLOWED_VIDEO_DOMAINS)}.",
+            status_code=422, detail=f"Domain '{host}' not allowed. Allowed: {sorted(ALLOWED_VIDEO_DOMAINS)}."
         )
 
 
@@ -956,19 +879,12 @@ def _validate_webhook_url(url: str) -> None:
     except Exception:
         raise HTTPException(status_code=422, detail="Malformed webhook_url.")
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        raise HTTPException(
-            status_code=422, detail="webhook_url must be an http(s) link."
-        )
+        raise HTTPException(status_code=422, detail="webhook_url must be an http(s) link.")
     host = parsed.hostname.lower()
     if host == "localhost" or host.endswith(".local"):
-        raise HTTPException(
-            status_code=422, detail="webhook_url must not target internal hosts."
-        )
+        raise HTTPException(status_code=422, detail="webhook_url must not target internal hosts.")
     if not _webhook_host_is_public(host):
-        raise HTTPException(
-            status_code=422,
-            detail="webhook_url must resolve to public IPs only.",
-        )
+        raise HTTPException(status_code=422, detail="webhook_url must resolve to public IPs only.")
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -1040,15 +956,12 @@ def _normalize_project(project: str | None) -> str | None:
         project = project.strip().lower() or None
     if project is not None and project not in KNOWN_PROJECTS:
         raise HTTPException(
-            status_code=422,
-            detail=f"Unknown project '{project}'. Allowed: {sorted(KNOWN_PROJECTS)} or null.",
+            status_code=422, detail=f"Unknown project '{project}'. Allowed: {sorted(KNOWN_PROJECTS)} or null."
         )
     return project
 
 
-async def _probe_and_pick_fps(
-    url: str, fps_req: float | None, transcribe: bool = True
-) -> float:
+async def _probe_and_pick_fps(url: str, fps_req: float | None, transcribe: bool = True) -> float:
     """Duration-cap check (probed before download) + adaptive fps when the
     caller omitted fps. Raises HTTPException on probe failure or over-cap.
     transcribe=False jobs get the looser MAX_NOTRANSCRIBE_DURATION_SEC cap."""
@@ -1058,14 +971,9 @@ async def _probe_and_pick_fps(
         try:
             probed = await asyncio.to_thread(_probe_duration, url)
         except Exception as exc:
-            raise HTTPException(
-                status_code=502, detail=f"Could not read video metadata: {exc}"
-            )
+            raise HTTPException(status_code=502, detail=f"Could not read video metadata: {exc}")
         if cap > 0 and probed > cap:
-            raise HTTPException(
-                status_code=422,
-                detail=(f"Video too long ({int(probed)}s > {cap}s cap)."),
-            )
+            raise HTTPException(status_code=422, detail=(f"Video too long ({int(probed)}s > {cap}s cap)."))
     return fps_req if fps_req is not None else _adaptive_fps(probed or 0.0)
 
 
@@ -1083,28 +991,18 @@ def _spawn_job(
     end_s: float | None = None,
     transcribe: bool = True,
 ) -> None:
-    t = asyncio.get_running_loop().create_task(
-        _process_job(job_id, url, fps, start_s, end_s, transcribe)
-    )
+    t = asyncio.get_running_loop().create_task(_process_job(job_id, url, fps, start_s, end_s, transcribe))
     _bg_tasks.add(t)
     t.add_done_callback(_bg_tasks.discard)
 
 
-def _register_job(
-    url: str,
-    project: str | None,
-    webhook_url: str | None,
-    transcribe: bool = True,
-) -> str:
+def _register_job(url: str, project: str | None, webhook_url: str | None, transcribe: bool = True) -> str:
     # Authoritative backlog check. The endpoint-level gate is only a fast-fail
     # snapshot taken BEFORE the multi-second yt-dlp probes — concurrent
     # requests all pass it (TOCTOU). This function is synchronous (no await
     # between count and write), so on a single event loop it cannot race.
     if _count_active_jobs() >= MAX_PENDING_JOBS:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Job backlog full (max {MAX_PENDING_JOBS} pending).",
-        )
+        raise HTTPException(status_code=429, detail=f"Job backlog full (max {MAX_PENDING_JOBS} pending).")
     job_id = str(uuid.uuid4())
     (TEMP_DIR / job_id).mkdir(parents=True, exist_ok=True)
     _save_job(
@@ -1138,20 +1036,12 @@ async def analyze(request: AnalyzeRequest):
     if request.start_s is not None and request.start_s < 0:
         raise HTTPException(status_code=422, detail="start_s must be >= 0.")
     if request.end_s is not None and request.end_s <= (request.start_s or 0):
-        raise HTTPException(
-            status_code=422, detail="end_s must be greater than start_s."
-        )
+        raise HTTPException(status_code=422, detail="end_s must be greater than start_s.")
     project = _normalize_project(request.project)
     fps = await _probe_and_pick_fps(request.url, request.fps, request.transcribe)
-    job_id = _register_job(
-        request.url, project, request.webhook_url, request.transcribe
-    )
-    _spawn_job(
-        job_id, request.url, fps, request.start_s, request.end_s, request.transcribe
-    )
-    return JobResponse(
-        job_id=job_id, status="pending", url=request.url, project=project
-    )
+    job_id = _register_job(request.url, project, request.webhook_url, request.transcribe)
+    _spawn_job(job_id, request.url, fps, request.start_s, request.end_s, request.transcribe)
+    return JobResponse(job_id=job_id, status="pending", url=request.url, project=project)
 
 
 @app.post("/analyze/batch")
@@ -1160,9 +1050,7 @@ async def analyze_batch(request: BatchAnalyzeRequest):
     `rejected` (with the reason) instead of failing the whole batch."""
     urls = list(dict.fromkeys(u.strip() for u in request.urls if u.strip()))
     if not urls:
-        raise HTTPException(
-            status_code=422, detail="urls must contain at least one URL."
-        )
+        raise HTTPException(status_code=422, detail="urls must contain at least one URL.")
     if len(urls) > 20:
         raise HTTPException(status_code=422, detail="Max 20 URLs per batch.")
     project = _normalize_project(request.project)
@@ -1170,17 +1058,13 @@ async def analyze_batch(request: BatchAnalyzeRequest):
         _validate_webhook_url(request.webhook_url)
     if _count_active_jobs() + len(urls) > MAX_PENDING_JOBS:
         raise HTTPException(
-            status_code=429,
-            detail=f"Batch would exceed the job backlog cap ({MAX_PENDING_JOBS} pending).",
+            status_code=429, detail=f"Batch would exceed the job backlog cap ({MAX_PENDING_JOBS} pending)."
         )
 
     async def prepare(u: str) -> dict:
         try:
             _validate_url_domain(u)
-            return {
-                "url": u,
-                "fps": await _probe_and_pick_fps(u, request.fps, request.transcribe),
-            }
+            return {"url": u, "fps": await _probe_and_pick_fps(u, request.fps, request.transcribe)}
         except HTTPException as exc:
             return {"url": u, "reason": exc.detail}
 
@@ -1191,9 +1075,7 @@ async def analyze_batch(request: BatchAnalyzeRequest):
             rejected.append(p)
             continue
         try:
-            job_id = _register_job(
-                p["url"], project, request.webhook_url, request.transcribe
-            )
+            job_id = _register_job(p["url"], project, request.webhook_url, request.transcribe)
         except HTTPException as exc:
             # Backlog filled mid-batch (concurrent submits): remaining URLs
             # land in `rejected` instead of failing the whole request.
@@ -1241,13 +1123,9 @@ async def channel_top(url: str, n: int = 10):
     try:
         vids = await asyncio.to_thread(enumerate_channel)
     except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail=f"Channel enumeration failed: {exc}"
-        )
+        raise HTTPException(status_code=502, detail=f"Channel enumeration failed: {exc}")
     if not vids:
-        raise HTTPException(
-            status_code=404, detail="No videos found (not a channel/profile URL?)"
-        )
+        raise HTTPException(status_code=404, detail="No videos found (not a channel/profile URL?)")
     return {"channel": url, "enumerated": len(vids), "top": vids[:n]}
 
 
@@ -1310,9 +1188,7 @@ async def get_script(job_id: str):
     author = _resolve_author(job)
     video_id = _parse_source(job.get("url", ""))["video_id"]
     download_name = f"{_safe_slug(author)}_{_safe_slug(video_id)}.txt"
-    return FileResponse(
-        script_path, media_type="text/plain; charset=utf-8", filename=download_name
-    )
+    return FileResponse(script_path, media_type="text/plain; charset=utf-8", filename=download_name)
 
 
 @app.get("/jobs/{job_id}/audio.mp3")
@@ -1344,11 +1220,7 @@ def _refresh_metadata_sync(url: str) -> tuple[float, str | None, dict]:
     uploader = next(
         (
             v
-            for v in (
-                info.get("uploader_id"),
-                info.get("uploader"),
-                info.get("channel"),
-            )
+            for v in (info.get("uploader_id"), info.get("uploader"), info.get("channel"))
             if v and not str(v).isdigit()
         ),
         None,
@@ -1373,21 +1245,15 @@ async def refresh_metrics(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     if job.get("status") != "done":
-        raise HTTPException(
-            status_code=400, detail="Job must be done before metrics can be refreshed"
-        )
+        raise HTTPException(status_code=400, detail="Job must be done before metrics can be refreshed")
     url = job.get("url")
     if not url:
         raise HTTPException(status_code=400, detail="Job has no URL to refresh")
 
     try:
-        duration, uploader, metrics = await asyncio.to_thread(
-            _refresh_metadata_sync, url
-        )
+        duration, uploader, metrics = await asyncio.to_thread(_refresh_metadata_sync, url)
     except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail=f"yt-dlp metadata fetch failed: {exc}"
-        )
+        raise HTTPException(status_code=502, detail=f"yt-dlp metadata fetch failed: {exc}")
 
     updates: dict = {"metrics": metrics}
     if duration:
@@ -1431,6 +1297,40 @@ async def patch_user_tags(job_id: str, payload: UserTagsRequest):
     _write_script(job_id)
     job = _load_job(job_id) or {}
     return JobResponse(job_id=job_id, **_resolve_frames(job_id, job))
+
+
+@app.post("/jobs/{job_id}/save-transcript")
+async def save_transcript(job_id: str, request: SaveTranscriptRequest):
+    """Local-dev-only bridge into the Wiki_Claude vault's Sourcing transcript
+    registry (Projects/Sourcing/tools/transcript_registry.py, mounted at
+    /sourcing/tools by docker-compose.yml — absent in prod, where this
+    endpoint 501s)."""
+    if transcript_registry is None:
+        raise HTTPException(status_code=501, detail="Sourcing registry not mounted (local dev only).")
+    job = _load_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.get("transcript"):
+        raise HTTPException(status_code=409, detail="Job has no transcript yet.")
+    niche = request.niche.strip()
+    if not niche:
+        raise HTTPException(status_code=422, detail="niche is required.")
+    try:
+        video_id = transcript_registry.extract_video_id(job["url"])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    path = transcript_registry.save(
+        niche=niche,
+        video_id=video_id,
+        url=job["url"],
+        transcript=job["transcript"],
+        channel=request.channel,
+        title=request.title,
+        views=request.views,
+    )
+    if path is None:
+        return {"saved": False, "reason": "already_exists"}
+    return {"saved": True, "path": str(path)}
 
 
 @app.get("/jobs/{job_id}/frames.zip")
@@ -1482,9 +1382,7 @@ async def get_status(job_id: str):
 @app.get("/jobs", response_model=list[JobResponse])
 async def list_jobs():
     jobs = []
-    for job_dir in sorted(
-        TEMP_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True
-    ):
+    for job_dir in sorted(TEMP_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         job_file = job_dir / "job.json"
         if not job_file.exists():
             continue

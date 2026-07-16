@@ -8,6 +8,10 @@ services:
       - ./temp:/app/temp
       - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
       - ${SCRIPT_INBOX_HOST:-./script_inbox}:/inbox/scripts
+      # Local dev only — bridges the Sourcing transcript registry (sibling
+      # project) so /jobs/{id}/save-transcript can write into it. Never add
+      # this to docker-compose.prod.yml.
+      - ../Sourcing:/sourcing:rw
     env_file:
       - .env
     environment:

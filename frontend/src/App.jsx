@@ -5,6 +5,7 @@ import FrameGallery from './components/FrameGallery.jsx'
 import JobHistory from './components/JobHistory.jsx'
 import Transcript from './components/Transcript.jsx'
 import Toast from './components/Toast.jsx'
+import ChannelResults from './components/ChannelResults.jsx'
 
 // '' in prod (same origin via Cloudflare Tunnel) — Vite dev sets
 // VITE_API_URL=http://localhost:8000 in docker-compose.yml.
@@ -132,6 +133,7 @@ export default function App() {
   const [frames, setFrames] = useState([])
   const [history, setHistory] = useState([])
   const [toastMessage, setToastMessage] = useState(null)
+  const [channelParams, setChannelParams] = useState(null)
   const pollRef = useRef(null)
 
   const showToast = (msg) => setToastMessage(msg)
@@ -185,6 +187,14 @@ export default function App() {
     setJobId(data.job_id)
   }
 
+  const handleAnalyzeChannel = (url, topN, fps, project) => {
+    stopPolling()
+    setFrames([])
+    setJobStatus(null)
+    setJobId(null)
+    setChannelParams({ url, topN, fps, project })
+  }
+
   const handleAnalyzeBatch = async (urls, fps, project) => {
     try {
       const res = await fetch(`${API}/analyze/batch`, {
@@ -236,6 +246,7 @@ export default function App() {
     setJobId(null)
     setJobStatus(null)
     setFrames([])
+    setChannelParams(null)
   }
 
   const [refreshing, setRefreshing] = useState(false)
@@ -295,7 +306,16 @@ export default function App() {
       <header>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>TikTok Analyzer</h1>
       </header>
-      {jobStatus ? (
+      {channelParams ? (
+        <ChannelResults
+          api={API}
+          url={channelParams.url}
+          topN={channelParams.topN}
+          fps={channelParams.fps}
+          project={channelParams.project}
+          onBack={handleBack}
+        />
+      ) : jobStatus ? (
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <button
             onClick={handleBack}
@@ -434,10 +454,15 @@ export default function App() {
           )}
         </div>
       ) : (
-        <UrlInput onSubmit={handleAnalyze} onSubmitBatch={handleAnalyzeBatch} disabled={isProcessing} />
+        <UrlInput
+          onSubmit={handleAnalyze}
+          onSubmitBatch={handleAnalyzeBatch}
+          onSubmitChannel={handleAnalyzeChannel}
+          disabled={isProcessing}
+        />
       )}
-      {jobStatus && <StatusIndicator status={jobStatus} />}
-      {jobId && jobStatus && (
+      {!channelParams && jobStatus && <StatusIndicator status={jobStatus} />}
+      {!channelParams && jobId && jobStatus && (
         <UserTagsEditor
           jobId={jobId}
           tags={jobStatus.user_tags || []}
@@ -445,12 +470,12 @@ export default function App() {
           showToast={showToast}
         />
       )}
-      {frames.length > 0 && <FrameGallery frames={frames} />}
-      {jobStatus?.transcript && <Transcript text={jobStatus.transcript} />}
-      {jobStatus?.hook_overlay_text && (
+      {!channelParams && frames.length > 0 && <FrameGallery frames={frames} />}
+      {!channelParams && jobStatus?.transcript && <Transcript text={jobStatus.transcript} />}
+      {!channelParams && jobStatus?.hook_overlay_text && (
         <Transcript title="Hook — on-screen text, first seconds (OCR)" text={jobStatus.hook_overlay_text} />
       )}
-      {jobStatus?.overlay_text && (
+      {!channelParams && jobStatus?.overlay_text && (
         <Transcript title="On-screen text (OCR)" text={jobStatus.overlay_text} />
       )}
       <JobHistory
