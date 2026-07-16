@@ -1,19 +1,15 @@
 <claude-mem-context>
 # Memory Context
 
-# [TikTok Analyzer] recent context, 2026-07-16 10:04am GMT+2
+# [TikTok Analyzer] recent context, 2026-07-16 10:05am GMT+2
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (19 266t read) | 117 060t work | 84% savings
+Stats: 50 obs (18 934t read) | 115 379t work | 84% savings
 
-### Jul 14, 2026
-19162 10:33p 🔵 TikTok Analyzer /analyze Endpoint Returns Async Job with UUID
-19163 10:35p 🔵 TikTok Analyzer Full Job Lifecycle: Transcription Takes ~110s, Returns Voice + Transcript
 ### Jul 15, 2026
-19164 6:41a 🔵 TikTok Analyzer API.md documents full response schema including voice/overlay fields
 19165 6:42a 🔵 API.md full contract confirmed — `voice` field absent, all other fields documented
 19166 " ✅ API.md updated to document `voice` prosody analysis field in response schema
 19167 " ✅ API.md Notes section extended with voice/prosody consumer guidance
@@ -72,27 +68,9 @@ S3321 TikTok Analyzer repo move safety audit — complete verdict delivered, mov
 19856 " 🔵 vault-session.sh ship Command: Full Session-Close with Auto-Drift-Handling and Strict FF Merge
 19857 9:56a 🔵 Master Tree Still Shows Modified TikTok Analyzer Submodule Before Ship
 S3342 TikTok Analyzer project moved into ObsidianVault — fix orphaned git submodule and complete vault integration (Jul 16, 9:56 AM)
-**Investigated**: - Vault .gitignore structure: globally ignores .claude/, with per-project exceptions for skills in Psycho, Niche_PC, Repost_Amélioré, Stickman_3d_Psychologie
-    - Git status of "Projects/TikTok Analyzer" in the vault: appeared as modified submodule (` M`)
-    - Confirmed via `git ls-files -s`: mode 160000 gitlink already existed in vault index at hash `d3ccd263...`
-    - .gitmodules had NO entry for TikTok Analyzer — orphaned gitlink
-    - Traced the orphaned gitlink to commit `c74434d` (today, 2026-07-16 09:47) — accidentally committed during unrelated neon-psycho content commit
-    - Full vault submodule inventory: two properly declared (capcut-cli-david/repo + CutCLI/cutcli-cookbook), one orphaned (TikTok Analyzer)
-    - vault-session.sh internals: save (commit+push branch), ship (full FF merge to master), ship-main (commit master-tree drift), with mutex locking and auto-outputs-drift handler
+19858 10:04a 🔵 TikTok Analyzer Git State: AGENTS.md Modified, New Diagrams Untracked
+19859 " ✅ TikTok Analyzer: Architecture Diagram and Backend AGENTS.md Committed
+19860 10:05a 🔵 Wiki_Claude Parent Repo: TikTok Analyzer Submodule Pointer Needs Update
 
-**Learned**: - Vault uses git worktree-per-session workflow via `vault-session.sh start/save/ship` — never commits directly to master
-    - `ship` requires master to be clean before FF-merging session branch; auto-handles outputs/ drift but NOT submodule pointer drift
-    - TikTok Analyzer has a GitHub remote: https://github.com/Davidb-2107/tiktok-analyzer.git (branch: master)
-    - The orphaned gitlink was created when `git add -A` captured the newly placed TikTok Analyzer folder (which has its own .git) during an unrelated commit — classic git footgun
-    - Claude Code project memory was successfully copied from the old E-drive slug to the new ObsidianVault slug, preserving 9 memory files
-    - Vault contains 2066 tracked files; vault-worktrees live under ~/vault-worktrees/
-
-**Completed**: - Copied Claude Code project memory from old path slug (E--GIT-REPO...) to new slug (C--Users-dbele-Documents-ObsidianVault-Wiki-Claude-Projects-TikTok-Analyzer) — 9 files preserved
-    - Added TikTok Analyzer formal submodule declaration to .gitmodules in the vault worktree (url: github.com/Davidb-2107/tiktok-analyzer.git, branch: master)
-    - Committed and pushed .gitmodules fix via `vault-session save` → branch `session/tiktok-analyzer-submodule` pushed to origin (GitHub: Davidb-2107/Wiki_Claude)
-
-**Next Steps**: The master vault tree still shows ` M "Projects/TikTok Analyzer"` (submodule pointer mismatch — TikTok Analyzer repo itself has uncommitted changes: docs/diagrams/, backend/AGENTS.md new, AGENTS.md modified). Claude has proposed committing those changes in the TikTok Analyzer repo first to clean the submodule pointer, then running `vault-session ship` to FF-merge the .gitmodules fix from the session branch to vault master.
-
-
-Access 117k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 115k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>
