@@ -37,11 +37,18 @@ try:
 except ImportError:
     transcript_registry = None
 
+import hub as niche_hub
+
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
 # Backlog cap: jobs beyond MAX_CONCURRENT_JOBS now QUEUE (status stays
 # "pending" until a slot frees) instead of being rejected. 429 only fires
 # when the total non-terminal backlog exceeds this.
 MAX_PENDING_JOBS = int(os.environ.get("MAX_PENDING_JOBS", "20"))
+
+# Niche Hub (dev local) : /vault est bind-monté :ro par docker-compose.yml,
+# jamais en prod — sans mount, GET /hub répond 404.
+VAULT_DIR = Path(os.environ.get("VAULT_DIR", "/vault"))
+
 ACTIVE_TERMINAL = {"done", "error"}
 
 # Serializes actual processing to MAX_CONCURRENT_JOBS. Queued _process_job
@@ -1441,6 +1448,24 @@ async def get_thumbnail(job_id: str):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# --- Niche Hub (lecture seule, dev local uniquement) ----------------------
+
+
+@app.get("/hub")
+def get_hub():
+    if not VAULT_DIR.is_dir():
+        raise HTTPException(status_code=404, detail="Vault non monté (dev local uniquement).")
+    return niche_hub.build_hub(VAULT_DIR)
+
+
+@app.get("/hub/frame/{path:path}")
+def get_hub_frame(path: str):
+    if not VAULT_DIR.is_dir():
+        raise HTTPException(status_code=404, detail="Vault non monté.")
+    frame = niche_hub.resolve_frame(VAULT_DIR / "Projects/Sourcing/frames", path)
+    return FileResponse(frame)
 
 
 # Prod mode: serve the React build baked into the image at /app/static.
