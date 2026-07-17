@@ -6,6 +6,7 @@ import JobHistory from './components/JobHistory.jsx'
 import Transcript from './components/Transcript.jsx'
 import Toast from './components/Toast.jsx'
 import ChannelResults from './components/ChannelResults.jsx'
+import Hub from './Hub.jsx'
 
 // '' in prod (same origin via Cloudflare Tunnel) — Vite dev sets
 // VITE_API_URL=http://localhost:8000 in docker-compose.yml.
@@ -134,6 +135,7 @@ export default function App() {
   const [history, setHistory] = useState([])
   const [toastMessage, setToastMessage] = useState(null)
   const [channelParams, setChannelParams] = useState(null)
+  const [showHub, setShowHub] = useState(false)
   const pollRef = useRef(null)
 
   const showToast = (msg) => setToastMessage(msg)
@@ -300,11 +302,32 @@ export default function App() {
 
   const isProcessing = jobStatus && !['done', 'error', 'frames_ready'].includes(jobStatus.status)
 
+  if (showHub) return (
+    <ErrorBoundary>
+      <Hub api={API} onBack={() => setShowHub(false)} />
+    </ErrorBoundary>
+  )
+
   return (
     <ErrorBoundary>
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <header>
+      <header style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>TikTok Analyzer</h1>
+        <button
+          onClick={() => setShowHub(true)}
+          style={{
+            padding: '0.4rem 0.85rem',
+            borderRadius: '6px',
+            border: '1px solid #2a2a2a',
+            background: 'transparent',
+            color: '#aaa',
+            cursor: 'pointer',
+            fontSize: '0.85rem',
+            marginLeft: 'auto',
+          }}
+        >
+          Hub niches
+        </button>
       </header>
       {channelParams ? (
         <ChannelResults

@@ -12,6 +12,10 @@ services:
       # project) so /jobs/{id}/save-transcript can write into it. Never add
       # this to docker-compose.prod.yml.
       - ../Sourcing:/sourcing:rw
+      # Local dev only — vault racine en lecture seule pour le Niche Hub
+      # (GET /hub). Jamais dans docker-compose.prod.yml : sans ce mount,
+      # /hub répond 404 (garde VAULT_DIR).
+      - ../../:/vault:ro
     env_file:
       - .env
     environment:
@@ -22,6 +26,7 @@ services:
       - SCRIPT_INBOX_DIR=/inbox/scripts
       - INBOX_PSYCHO=${INBOX_PSYCHO:-/inbox/scripts}
       - INBOX_ARCHIVE=${INBOX_ARCHIVE:-}
+      - VAULT_DIR=/vault
     restart: unless-stopped
 
   frontend:
