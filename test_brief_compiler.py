@@ -57,6 +57,23 @@ def main():
     assert brief["gates"]["source"].endswith("tiktok_duration.py")
     assert brief["gates"]["target_duration_s"] == target_s
 
+    # Niche sans verdict moteur dans ENGINE-FACTS -> TODO explicite, jamais deviné.
+    assert bc.engine_provenance("niche_inexistante_xyz") is None
+
+    # Cards taxonomiques archivées (labels fixes extract-format) -> priment.
+    fake = [
+        {
+            "card": (
+                "## FORMAT CARD — @x — url\n"
+                "- **Hook mechanic:** text-tease\n"
+                "- **Video style:** AI animation\n"
+                "- **Realism:** 5 — fully animated wireframe\n"
+            )
+        }
+    ]
+    assert bc.parse_cards(fake) == ("AI animation", 5, "text-tease")
+    assert bc.parse_cards([{"card": ""}]) is None  # aucune card -> fallback mots-clés
+
     print("OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.")
     print(
         f"  beats: {len(beats)} ({total}s)  shots: {len(brief['shots'])}  "
