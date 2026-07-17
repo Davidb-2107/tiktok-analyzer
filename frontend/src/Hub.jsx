@@ -80,7 +80,7 @@ function SourcingTab({ api, niche }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
           <span style={microLabel}>Chaînes</span>
           {chaines.map((c, i) => (
-            <span key={i} style={pill('#aaa')}>{typeof c === 'string' ? c : dash(c.nom || c.handle || c.url)}</span>
+            <span key={i} style={pill('#aaa')}>{typeof c === 'string' ? c : dash(c?.note || c?.channel_url)}</span>
           ))}
         </div>
       )}

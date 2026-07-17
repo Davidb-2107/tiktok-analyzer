@@ -151,6 +151,8 @@ def _library_entries(vault, niche, warnings):
 
 def _channels(vault, niche, warnings):
     cj = vault / SOURCING / "channels.json"
+    if not cj.is_file():
+        return []
     try:
         return json.loads(cj.read_text(encoding="utf-8")).get(niche, [])
     except (OSError, ValueError):
