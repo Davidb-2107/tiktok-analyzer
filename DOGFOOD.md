@@ -1,7 +1,13 @@
 # Dogfood — le test décisif du pivot brief-compiler
 
-**Question** : sur la prod Neon_Psycho hebdo, le brief fait-il gagner du temps
-*répété* ? Verdict après **5 vidéos produites avec brief** (10 si ambigu) :
+**Portée : TOUS les projets de création vidéo TikTok** (Neon_Psycho, Stickman,
+Psycho, Niche_PC…) — règle consignée dans `Shared/PRODUCTION-RULES.md`
+§Dogfood : chaque session de prod remplit une ligne en fin de vidéo. Les vidéos
+produites SANS brief (projets pas encore migrés) sont les lignes `baseline` —
+c'est l'A/B naturel inter-projets.
+
+**Question** : le brief fait-il gagner du temps *répété* sur la prod réelle ?
+Verdict après **5 vidéos produites avec brief** (10 si ambigu) :
 `gain médian X min/vidéo` ou `abandon` (ou reframe en outil d'onboarding de niche
 si le gain se concentre sur la vidéo 1 — voir Effets ci-dessous).
 
@@ -19,7 +25,8 @@ conclurait « abandon » à tort. On sépare :
 
 ## Protocole (par vidéo produite, ~1 min de saisie)
 
-Au moment de produire une vidéo Neon_Psycho, remplir une ligne du tableau :
+Au moment de produire une vidéo TikTok (quel que soit le projet), remplir une
+ligne du tableau :
 
 - **cadrage_min** : minutes passées sur ce que le brief prétend remplacer —
   calcul mots/durée, relecture specs (fenêtre, pacing, captions), choix/rappel
@@ -29,15 +36,15 @@ Au moment de produire une vidéo Neon_Psycho, remplir une ligne du tableau :
 - **hors_brief** : ce qu'il a fallu chercher/décider À CÔTÉ du brief (le backlog
   produit gratuit).
 
-**Baseline** : les 2-3 dernières vidéos produites AVANT le brief, estimées de
-mémoire une seule fois (lignes `baseline`), + les gate-failures historiques du
-pipeline Psycho si retrouvables.
+**Baseline** : toute vidéo produite sans brief (autres projets TikTok, au fil de
+l'eau), + une estimation de mémoire des 2-3 dernières vidéos pré-brief, une
+seule fois.
 
 ## Journal
 
-| date | vidéo (topic) | type (baseline/onboarding/répété) | cadrage_min | rerenders_durée | hors_brief | notes |
-|---|---|---|---|---|---|---|
-|  |  |  |  |  |  |  |
+| date | projet | vidéo (topic) | type (baseline/onboarding/répété) | cadrage_min | rerenders_durée | hors_brief | notes |
+|---|---|---|---|---|---|---|---|
+|  |  |  |  |  |  |  |  |
 
 ## Verdict (à remplir après N=5)
 
