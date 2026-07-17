@@ -4,9 +4,13 @@ Prend les artefacts d'extract-format d'une niche (registre Sourcing : transcript
 + CHANNEL FORMULA) et compile un brief exécutable qui VALIDE contre
 brief.schema.json. Aucune constante de prod locale :
   - durées/pacing importés de Shared/tiktok-spec/tiktok_duration.py (SOT)
-  - provenance moteur lue dans Shared/ENGINE-FACTS.md (assert si absente)
+  - provenance moteur lue dans Shared/ENGINE-FACTS.md (TODO explicite si aucun
+    verdict par-niche — jamais deviné)
   - WPM lu du profil voix calibré Shared/voice-calibration/voice_wpm.json
     (TODO explicite si aucun profil — jamais deviné)
+  - taxonomie (style/realism/hook_mechanic) lue des FORMAT CARDs archivées dans
+    les fichiers registre par-vidéo quand elles existent ; sinon inférence
+    mots-clés sur la prose de la formula (fallback)
 
 Usage :  python brief_compiler.py <niche> [--voice ALIAS] [--language fr]
                                   [--out brief_<niche>.json]
@@ -19,6 +23,7 @@ import math
 import re
 import sys
 import unicodedata
+from collections import Counter
 from pathlib import Path
 
 import brief_selfcheck as sc  # VAULT, load_sot, validate_* — le contrat existant
@@ -66,6 +71,8 @@ def load_registry(niche):
                 "title": meta.get("title", ""),
                 "views": meta.get("views", 0),
                 "transcript": (m.group(1).strip() if m else ""),
+                # card taxonomique archivée par extract-format (step 5), si présente
+                "card": (c.group(0) if (c := re.search(r"^## FORMAT CARD.*", body, re.S | re.M)) else ""),
                 "ref": f"Projects/Sourcing/transcripts/{niche}/{f.name}",
             }
         )
@@ -89,11 +96,7 @@ def _slug(s):
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     s = re.split(r"[:(—-]| - ", s, 1)[0]  # coupe à ':', '(', tiret long
     words = re.findall(r"[a-z0-9]+", s.lower())
-    return "_".join(
-        w
-        for w in words
-        if w not in ("l", "le", "la", "les", "d", "de", "du", "un", "une")
-    )[:40]
+    return "_".join(w for w in words if w not in ("l", "le", "la", "les", "d", "de", "du", "un", "une"))[:40]
 
 
 def _section(text, title):
@@ -116,9 +119,55 @@ def _bullets(block):
     return items
 
 
-# ponytail: mapping mots-clés formula -> taxonomie ; suffit tant que la formula
-# est de la prose. Si extract-format archive les cards taxonomiques brutes,
-# parser les labels **Video style:** / **Realism:** / **Hook mechanic:** direct.
+# Taxonomie fixe d'extract-format (SKILL.md "do not add/remove/rename fields").
+STYLES = [
+    "talking head",
+    "POV skit",
+    "AI animation",
+    "screen recording",
+    "b-roll + voiceover",
+    "slideshow/photo",
+    "vlog",
+    "tutorial/demo",
+    "reaction",
+]
+MECHANICS = [
+    "shock/pattern-interrupt",
+    "bold claim",
+    "mid-action start",
+    "curiosity gap",
+    "direct address",
+    "text-tease",
+    "question",
+]
+
+
+def parse_cards(videos):
+    """Taxonomie depuis les FORMAT CARDs archivées (labels fixes, vote majoritaire
+    across vidéos). Retourne (style, realism, hook_mechanic) ou None si aucune
+    card archivée — le fallback mots-clés prend alors le relais."""
+    votes = []
+    for v in videos:
+        card = v.get("card")
+        if not card:
+            continue
+
+        def field(label):
+            m = re.search(rf"\*\*{label}:\*\*\s*(.+)", card)
+            return m.group(1).strip() if m else ""
+
+        style = next((s for s in STYLES if s.lower() in field("Video style").lower()), "other")
+        mech = next((h for h in MECHANICS if h.lower() in field("Hook mechanic").lower()), "other")
+        m = re.search(r"[1-5]", field("Realism"))
+        votes.append((style, int(m.group()) if m else 3, mech))
+    if not votes:
+        return None
+    majority = lambda i: Counter(v[i] for v in votes).most_common(1)[0][0]
+    return majority(0), majority(1), majority(2)
+
+
+# ponytail: fallback mots-clés quand aucune card archivée (anciennes niches dont
+# seule la synthèse prose existe) — les cards taxonomiques priment via parse_cards.
 STYLE_KEYWORDS = [
     (r"wireframe|hologram|anim|IA|AI ", "AI animation", 5),
     (r"talking head|face cam", "talking head", 1),
@@ -181,10 +230,7 @@ def load_voice(niche, alias, language):
     if not alias:
         key = re.sub(r"[^a-z0-9]", "", niche.lower())
         cands = [
-            k
-            for k in data
-            if not k.startswith("_")
-            and re.sub(r"[^a-z0-9]", "", k.lower()).startswith(key)
+            k for k in data if not k.startswith("_") and re.sub(r"[^a-z0-9]", "", k.lower()).startswith(key)
         ]
         if not cands:
             return (
@@ -193,9 +239,7 @@ def load_voice(niche, alias, language):
                 f"TODO: aucun profil voix pour la niche '{niche}' — lancer calibrate-voice (valeur _default non calibrée)",
             )
         # ponytail: défaut = alias le plus utilisé en prod (runs), tiebreak nom court
-        alias = max(
-            cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k))
-        )
+        alias = max(cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k)))
 
     wpm, label = voice_wpm.get_wpm(alias, language=language)
     profile = voice_wpm.get_profile(alias, language=language) or {}
@@ -205,37 +249,17 @@ def load_voice(niche, alias, language):
 
 # --- SOT moteurs --------------------------------------------------------------
 def engine_provenance(niche):
-    """(kling_line, seedance_line) — lues d'ENGINE-FACTS, assert si absentes."""
+    """(default_line, hero_line) lues d'ENGINE-FACTS, ou None si aucun verdict
+    par-niche ('défaut <niche>') — on ne devine JAMAIS un moteur non testé :
+    le brief sort alors avec des entrées TODO(engine-facts)."""
     text = ENGINE_FACTS.read_text(encoding="utf-8")
-    kling = next(
-        (
-            ln.strip("- ").strip()
-            for ln in text.splitlines()
-            if re.search(rf"défaut {niche}", ln, re.I)
-        ),
-        None,
-    )
-    kling = kling or next(
-        (
-            ln.strip("- ").strip()
-            for ln in text.splitlines()
-            if "kling3_0" in ln and "std" in ln
-        ),
-        None,
-    )
-    seedance = next(
-        (
-            ln.strip("- ").strip()
-            for ln in text.splitlines()
-            if re.search(r"hero shots", ln, re.I)
-        ),
-        None,
-    )
-    assert kling and seedance, (
-        "faits kling3_0/Seedance absents d'ENGINE-FACTS — vérifier avant de compiler"
-    )
+    lines = [ln.strip("- ").strip() for ln in text.splitlines()]
+    default = next((ln for ln in lines if re.search(rf"défaut {niche}", ln, re.I)), None)
+    if not default:
+        return None
+    hero = next((ln for ln in lines if re.search(r"hero shots", ln, re.I)), default)
     fmt = lambda ln: f"ENGINE-FACTS (Shared/ENGINE-FACTS.md): {ln[:160]}"
-    return fmt(kling), fmt(seedance)
+    return fmt(default), fmt(hero)
 
 
 # --- beats + shots ------------------------------------------------------------
@@ -315,37 +339,63 @@ def compile_brief(niche, voice=None, language="fr"):
     target_s, shot_s = sc.load_sot()
     videos = load_registry(niche)
     formula_path, formula_text = find_formula(videos)
-    assert formula_text, (
-        f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
-    )
+    assert formula_text, f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
 
-    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(
-        formula_text
-    )
+    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(formula_text)
+    # les cards taxonomiques archivées priment sur l'inférence mots-clés
+    from_cards = parse_cards(videos)
+    if from_cards:
+        style, realism, hook_mechanic = from_cards
     frames_dir = FRAMES / niche
     if frames_dir.is_dir():
         constant["frames_ref"] = f"Projects/Sourcing/frames/{niche}/"
 
     voice_id, wpm, wpm_source = load_voice(niche, voice, language)
-    kling_prov, seedance_prov = engine_provenance(niche)
+    engines = engine_provenance(niche)
 
     beats = build_beats(target_s, wpm, hook_template, constant)
     shots = build_shots(beats, shot_s)
 
     camera = constant.get("camera", constant.get("cameras", ""))
     style_line = next(iter(constant.values())) if constant else style
+    hero_prompt = f"hero shot (hook 0-3s): {style_line} — {camera or 'plan fixe / drift lent'} — <topic>"
+    body_prompt = f"{style_line} — {camera or 'plan fixe / drift lent'} — beat courant du script, <topic>"
+    if engines:
+        default_prov, hero_prov = engines
+        prompt_pack = [
+            {
+                "id": "p_hero",
+                "engine": "seedance",
+                "mode": "pro",
+                "sound": "off",
+                "prompt": hero_prompt,
+                "provenance": hero_prov,
+            },
+            {
+                "id": "p_body",
+                "engine": "kling3_0",
+                "mode": "std",
+                "sound": "off",
+                "prompt": body_prompt,
+                "provenance": default_prov,
+            },
+        ]
+    else:
+        todo = (
+            f"TODO: aucun fait 'défaut {niche}' dans ENGINE-FACTS — tester les "
+            "moteurs (gate pilote) puis consigner le verdict avant production"
+        )
+        prompt_pack = [
+            {"id": "p_hero", "engine": "TODO(engine-facts)", "prompt": hero_prompt, "provenance": todo},
+            {"id": "p_body", "engine": "TODO(engine-facts)", "prompt": body_prompt, "provenance": todo},
+        ]
     brief = {
         "schema_version": "0.1",
         "niche": niche,
         "source": {
-            "videos": [
-                {k: v[k] for k in ("url", "video_id", "channel", "title", "views")}
-                for v in videos
-            ],
+            "videos": [{k: v[k] for k in ("url", "video_id", "channel", "title", "views")} for v in videos],
             "format_card_ref": videos[0]["ref"].rsplit("/", 1)[0] + "/",
-            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT)).replace(
-                "\\", "/"
-            ),
+            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT)).replace("\\", "/"),
         },
         "format": {
             "style": style,
@@ -363,24 +413,7 @@ def compile_brief(niche, voice=None, language="fr"):
             "beats": beats,
         },
         "shots": shots,
-        "prompt_pack": [
-            {
-                "id": "p_hero",
-                "engine": "seedance",
-                "mode": "pro",
-                "sound": "off",
-                "prompt": f"hero shot (hook 0-3s): {style_line} — {camera or 'plan fixe / drift lent'} — <topic>",
-                "provenance": seedance_prov,
-            },
-            {
-                "id": "p_body",
-                "engine": "kling3_0",
-                "mode": "std",
-                "sound": "off",
-                "prompt": f"{style_line} — {camera or 'plan fixe / drift lent'} — beat courant du script, <topic>",
-                "provenance": kling_prov,
-            },
-        ],
+        "prompt_pack": prompt_pack,
         "captions": {"style": "karaoke", "max_lines": 1, "preset": "CC-DerStil"},
         "gates": {
             "target_duration_s": target_s,
