@@ -44,7 +44,20 @@ seule fois.
 
 | date | projet | vidéo (topic) | type (baseline/onboarding/répété) | cadrage_min | rerenders_durée | hors_brief | notes |
 |---|---|---|---|---|---|---|---|
-|  |  |  |  |  |  |  |  |
+| 2026-05→07 | Stickman | couper-les-gens, hyper-independance, surpenser-ses-messages | baseline | n/d | 3 vidéos sous 62s (56.5/60.0/55.7s) | — | produites sous l'ancienne cible/WPM non calibré → non monétisables en l'état (obs #15959) |
+| 2026-06-08 | Psycho | épisode (Darling v1→v2) | baseline | n/d | 2 (49.8s puis 59.7s avant fenêtre) | — | voice_wpm.json, phase-3 réel |
+| 2026-06-11 | Psycho | épisode (Darling) | baseline | n/d | 1 (58.0s) | — | voice_wpm.json |
+| 2026-06-21→07-09 | Psycho | 3 épisodes (Darling_at1.05) | baseline | n/d | 0 (68.0/71.6/68.1s) | — | post-calibration WPM : 3/3 dans la fenêtre du 1er coup |
+| 2026-07-15 | Neon_Psycho | épisode-pilote | baseline | n/d | 1 (at1.10 56.5s ; base 62.5/63.1s ok) | — | gate_2_3 PASS à 62.5s (obs #19291) |
+
+**Baseline reconstruite (2026-07-17, depuis voice_wpm.json + claude-mem — runs de
+calibration exclus) : avant le budget de mots calibré, ~1-2 rendus hors fenêtre
+par vidéo (juin) et 3 vidéos legacy sous le plancher de monétisation ; après
+calibration WPM, 0/3.** Le mécanisme central du brief (budget de mots depuis le
+WPM mesuré) a donc déjà un A/B historique en sa faveur — ce que le dogfood doit
+montrer, c'est que le brief le rend systématique (chaque niche, chaque fois) et
+que le reste du brief (moteurs, shot-list, gates) tient la même promesse.
+`cadrage_min` baseline : non mesurable rétroactivement (prod pilotée en session).
 
 ## Verdict (à remplir après N=5)
 
