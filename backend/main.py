@@ -28,6 +28,10 @@ from pydantic import BaseModel
 app = FastAPI(title="TikTok Analyzer")
 logger = logging.getLogger("tiktok-analyzer")
 
+# Importé avant le sys.path.insert ci-dessous : un éventuel
+# Sourcing/tools/hub.py ne doit jamais shadower backend/hub.py.
+import hub as niche_hub
+
 # Local-dev-only bridge into the Wiki_Claude vault's Sourcing transcript
 # registry — mounted at /sourcing/tools by docker-compose.yml (never in
 # docker-compose.prod.yml, so this stays None on the public VPS deployment).
@@ -36,8 +40,6 @@ try:
     import transcript_registry
 except ImportError:
     transcript_registry = None
-
-import hub as niche_hub
 
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
 # Backlog cap: jobs beyond MAX_CONCURRENT_JOBS now QUEUE (status stays

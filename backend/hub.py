@@ -41,7 +41,8 @@ def _frontmatter(md_path):
     for line in text.split("\n---", 1)[0].splitlines()[1:]:
         if ":" in line and not line.startswith((" ", "\t", "#")):
             k, v = line.split(":", 1)
-            fm[k.strip()] = v.split("#", 1)[0].strip().strip('"')
+            # " #" = commentaire YAML ; un "#hashtag" collé (titres) est gardé
+            fm[k.strip()] = v.split(" #", 1)[0].strip().strip('"')
     return fm
 
 
@@ -140,6 +141,7 @@ def _library_entries(vault, niche, warnings):
                 "note": m.get("note"),
                 "used": bool(m.get("usage")),
                 "captured": m.get("vetted"),
+                "vetted": m.get("vetted"),
                 "transcript_ref": None,
                 "card_ref": None,
                 "thumb": None,
