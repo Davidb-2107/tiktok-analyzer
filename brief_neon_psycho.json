@@ -1,0 +1,323 @@
+{
+  "schema_version": "0.1",
+  "niche": "neon_psycho",
+  "source": {
+    "videos": [
+      {
+        "url": "https://www.tiktok.com/@viraldtoprw/video/7568334048544820510",
+        "video_id": "7568334048544820510",
+        "channel": "@viraldtoprw",
+        "title": "Psychology: What your dog feels in his final moments",
+        "views": 10800000
+      },
+      {
+        "url": "https://www.tiktok.com/@viraldtoprw/video/7570326672780643614",
+        "video_id": "7570326672780643614",
+        "channel": "@viraldtoprw",
+        "title": "Psychology: Why your dog acts crazy every time you come home",
+        "views": 11100000
+      },
+      {
+        "url": "https://www.tiktok.com/@viraldtoprw/video/7571154788486827295",
+        "video_id": "7571154788486827295",
+        "channel": "@viraldtoprw",
+        "title": "Psychology: What your cat feels in her final moments",
+        "views": 30900000
+      },
+      {
+        "url": "https://www.tiktok.com/@viraldtoprw/video/7572554313268989215",
+        "video_id": "7572554313268989215",
+        "channel": "@viraldtoprw",
+        "title": "Psychology: The one true friend",
+        "views": 15700000
+      },
+      {
+        "url": "https://www.tiktok.com/@viraldtoprw/video/7572606346403564831",
+        "video_id": "7572606346403564831",
+        "channel": "@viraldtoprw",
+        "title": "Psychology: Why your cat sleeps at your feet",
+        "views": 26100000
+      }
+    ],
+    "format_card_ref": "Projects/Sourcing/transcripts/neon_psycho/",
+    "channel_formula_ref": "Projects/Sourcing/formats/viraldtoprw.md"
+  },
+  "format": {
+    "style": "AI animation",
+    "realism": 5,
+    "hook_mechanic": "question",
+    "hook_template": "[plan wireframe fixe ou drift lent, animal ou silhouette seule] + VO : « [Have you ever wondered / When your] [sujet] [comportement/moment]... » + karaoké mot-à-mot synchronisé",
+    "constant": {
+      "rendu": "hologramme wireframe cyan sur fond sombre + grille sol — **même registre visuel que @the.wisejourney** (déjà documenté dans la style-bible Neon_Psycho), mais appliqué à des sujets animaux/relationnels plutôt qu'au couple.",
+      "hook_03s": "question directe ou affirmation intrigante sur un comportement animal ou relationnel quotidien, un seul plan fixe ou en drift lent — aucune coupe.",
+      "corps": "reframe pseudo-scientifique du comportement, vocabulaire récurrent (cortisol, oxytocine, dopamine) sans vraie citation.",
+      "camera": "virtuelle, statique ou drift lent, jamais de coupe sèche, jamais handheld.",
+      "captions": "karaoké mot-à-mot centré, palette orange/blanc/rouge alternée.",
+      "aucun_visage_humain_net": "silhouettes de dos, floutées, ou l'animal seul — contraste avec @the.wisejourney qui montre les deux personnages de face.",
+      "voix_off": "narratrice calme et posée, même registre sur les 5 vidéos.",
+      "repro_checklist": [
+        "Choisir un comportement animal ou relationnel universellement reconnaissable.",
+        "Ouvrir en wireframe, cadrage fixe ou drift lent, jamais de coupe.",
+        "Poser la question ou l'affirmation en 3s max.",
+        "Reframer avec du vocabulaire pseudo-scientifique (hormones, psychologie).",
+        "Thème « perte/fin de vie » → viser la structure regard final / libération / mémoire (sous-template le plus fort de cet échantillon).",
+        "Clôture émotionnelle, CTA optionnel."
+      ],
+      "frames_ref": "Projects/Sourcing/frames/neon_psycho/"
+    },
+    "variable_slots": [
+      "espece",
+      "theme",
+      "presence_cta_explicite",
+      "teinte_exacte_wireframe"
+    ]
+  },
+  "script": {
+    "language": "fr",
+    "voice_id": "aFP1SKN7mTGVQWmfczLk",
+    "target_wpm": 158.0,
+    "wpm_source": "voice_wpm.json 'Neon_Psycho_FR' lang=fr: calibrated lang=fr (seed + 2 verified sample(s) accumulating)",
+    "beats": [
+      {
+        "id": "hook",
+        "role": "hook",
+        "t_start": 0.0,
+        "t_end": 3.0,
+        "text": "<hook, ~8 mots> template: [plan wireframe fixe ou drift lent, animal ou silhouette seule] + VO : « [Have you ever wondered / When your] [sujet] [comportement/moment]... » + karaoké mot-à-mot synchronisé"
+      },
+      {
+        "id": "setup",
+        "role": "setup",
+        "t_start": 3.0,
+        "t_end": 19.4,
+        "text": "<setup du <topic>, ~43 mots — poser le contexte, vocabulaire du format>"
+      },
+      {
+        "id": "payoff",
+        "role": "payoff",
+        "t_start": 19.4,
+        "t_end": 68.5,
+        "text": "<payoff, ~129 mots — dérouler la structure du format jusqu'à la clôture émotionnelle>"
+      }
+    ]
+  },
+  "shots": [
+    {
+      "id": "s1",
+      "beat": "hook",
+      "duration_s": 3.0,
+      "prompt_ref": "p_hero",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s2",
+      "beat": "setup",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s3",
+      "beat": "setup",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s4",
+      "beat": "setup",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s5",
+      "beat": "setup",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s6",
+      "beat": "setup",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s7",
+      "beat": "setup",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s8",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s9",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s10",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s11",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s12",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s13",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s14",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s15",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s16",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s17",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s18",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s19",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s20",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s21",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s22",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s23",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s24",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s25",
+      "beat": "payoff",
+      "duration_s": 2.73,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    }
+  ],
+  "prompt_pack": [
+    {
+      "id": "p_hero",
+      "engine": "seedance",
+      "mode": "pro",
+      "sound": "off",
+      "prompt": "hero shot (hook 0-3s): hologramme wireframe cyan sur fond sombre + grille sol — **même registre visuel que @the.wisejourney** (déjà documenté dans la style-bible Neon_Psycho), mais appliqué à des sujets animaux/relationnels plutôt qu'au couple. — virtuelle, statique ou drift lent, jamais de coupe sèche, jamais handheld. — <topic>",
+      "provenance": "ENGINE-FACTS (Shared/ENGINE-FACTS.md): Kling) génère un effet audio parasite → TOUJOURS couper. Seedance = hero shots"
+    },
+    {
+      "id": "p_body",
+      "engine": "kling3_0",
+      "mode": "std",
+      "sound": "off",
+      "prompt": "hologramme wireframe cyan sur fond sombre + grille sol — **même registre visuel que @the.wisejourney** (déjà documenté dans la style-bible Neon_Psycho), mais appliqué à des sujets animaux/relationnels plutôt qu'au couple. — virtuelle, statique ou drift lent, jamais de coupe sèche, jamais handheld. — beat courant du script, <topic>",
+      "provenance": "ENGINE-FACTS (Shared/ENGINE-FACTS.md): naturel, meilleure atmosphère) → **défaut neon_psycho = `kling3_0` mode `std`"
+    }
+  ],
+  "captions": {
+    "style": "karaoke",
+    "max_lines": 1,
+    "preset": "CC-DerStil"
+  },
+  "gates": {
+    "target_duration_s": [
+      62.0,
+      75.0
+    ],
+    "shot_duration_s": [
+      1.5,
+      4.0
+    ],
+    "aspect_ratio": "9:16",
+    "source": "Shared/tiktok-spec/tiktok_duration.py",
+    "checks": [
+      "durée finale dans target_duration_s",
+      "chaque shot dans shot_duration_s",
+      "9:16",
+      "captions <=1 ligne",
+      "silences coupés"
+    ]
+  }
+}

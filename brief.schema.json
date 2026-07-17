@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tiktok-analyzer.hen8n.com/brief.schema.json",
+  "title": "Production Brief",
+  "description": "Contrat entre l'ANALYSE (format card / channel formula d'extract-format) et la PRODUCTION (Higgsfield/Kling/Seedance + ElevenLabs + cutcli). Un brief est un plan de tournage EXÉCUTABLE : script beaté + shot-list + prompt-pack moteur + profil voix + gates spec. Ce n'est pas de l'analyse — c'est de la compilation format_card -> instructions déterministes. RÈGLE: les valeurs de spec (durées, pacing) sont IMPORTÉES d'un SOT (Shared/tiktok-spec/tiktok_duration.py) au moment de la compilation, jamais codées en dur ici; chaque valeur de prod porte sa provenance.",
+  "type": "object",
+  "required": ["schema_version", "niche", "source", "format", "script", "shots", "prompt_pack", "captions", "gates"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "niche": {
+      "type": "string",
+      "description": "Bucket de niche du registre Sourcing (ex: neon_psycho). Le brief est mono-niche par design."
+    },
+
+    "source": {
+      "type": "object",
+      "description": "D'où vient le format. Le brief ne réanalyse rien — il référence les artefacts d'extract-format.",
+      "required": ["videos"],
+      "additionalProperties": false,
+      "properties": {
+        "videos": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["url", "video_id"],
+            "additionalProperties": false,
+            "properties": {
+              "url": { "type": "string" },
+              "video_id": { "type": "string" },
+              "channel": { "type": "string" },
+              "title": { "type": "string" },
+              "views": { "type": "integer" }
+            }
+          }
+        },
+        "format_card_ref": { "type": "string", "description": "Chemin registre de la/les format card(s) source." },
+        "channel_formula_ref": { "type": "string", "description": "Chemin de la CHANNEL FORMULA quand >=2 vidéos." }
+      }
+    },
+
+    "format": {
+      "type": "object",
+      "description": "Le format reproductible extrait — ce qui est CONSTANT (le format) vs ce qui VARIE (le topic). Vocabulaire aligné sur la taxonomie fixe d'extract-format.",
+      "required": ["style", "realism", "hook_mechanic", "hook_template", "variable_slots"],
+      "additionalProperties": false,
+      "properties": {
+        "style": {
+          "type": "string",
+          "enum": ["talking head", "POV skit", "AI animation", "screen recording", "b-roll + voiceover", "slideshow/photo", "vlog", "tutorial/demo", "reaction", "other"]
+        },
+        "realism": { "type": "integer", "minimum": 1, "maximum": 5, "description": "1=footage réel .. 5=animé (échelle extract-format)." },
+        "hook_mechanic": {
+          "type": "string",
+          "enum": ["question", "shock/pattern-interrupt", "bold claim", "mid-action start", "curiosity gap", "direct address", "text-tease", "other"]
+        },
+        "hook_template": {
+          "type": "string",
+          "description": "Le pattern 0-3s récurrent en fill-in-the-blank (issu de CHANNEL FORMULA)."
+        },
+        "constant": {
+          "type": "object",
+          "description": "Les champs de format card identiques across vidéos — CECI est le format. Libre (camera, editing_pace, sound, cta...).",
+          "additionalProperties": true
+        },
+        "variable_slots": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Ce qui change par vidéo = les dimensions du 'topic' (ex: 'topic', 'pov_target')."
+        }
+      }
+    },
+
+    "script": {
+      "type": "object",
+      "description": "Narration beatée avec timing ET débit cible. Le WPM vient du profil voix calibré (SOT voix), pas d'une supposition — c'est ce qui n'existe chez aucun concurrent.",
+      "required": ["language", "voice_id", "target_wpm", "beats"],
+      "additionalProperties": false,
+      "properties": {
+        "language": { "type": "string", "description": "Code langue (fr, en...) — auto-détecté par Whisper à l'analyse." },
+        "voice_id": { "type": "string", "description": "ID ElevenLabs de la voix calibrée." },
+        "target_wpm": { "type": "number", "description": "Débit mesuré de la voix (source: calibrate-voice / profil WPM), pas inventé." },
+        "wpm_source": { "type": "string", "description": "Provenance du WPM (ex: 'calibrate-voice Darling atempo 1.05 — 2026-07-xx')." },
+        "beats": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["id", "role", "t_start", "t_end", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string" },
+              "role": { "type": "string", "enum": ["hook", "setup", "payoff", "turn", "cta", "other"] },
+              "t_start": { "type": "number", "minimum": 0 },
+              "t_end": { "type": "number", "minimum": 0 },
+              "text": { "type": "string", "description": "Texte narré du beat (vide si music-only)." },
+              "wpm": { "type": "number", "description": "Débit local si différent du target (emphase/silence)." }
+            }
+          }
+        }
+      }
+    },
+
+    "shots": {
+      "type": "array",
+      "description": "Shot-list. Chaque plan dure entre TIKTOK_SHOT_S[0] et TIKTOK_SHOT_S[1] (validé par le self-check contre le SOT). Chaque shot pointe un beat et un prompt.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "beat", "duration_s", "prompt_ref"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "beat": { "type": "string", "description": "id du beat script couvert par ce plan." },
+          "duration_s": { "type": "number", "description": "Durée du plan. Bornes vérifiées vs SOT, pas figées ici." },
+          "prompt_ref": { "type": "string", "description": "id d'une entrée prompt_pack." },
+          "motion": { "type": "string", "description": "Mouvement appliqué au montage (ex: ken_burns_in) si le plan dépasse et doit respirer." },
+          "overlay_text": { "type": "string", "description": "Texte à l'écran sur ce plan (issu de l'extraction overlay) ou omis." }
+        }
+      }
+    },
+
+    "prompt_pack": {
+      "type": "array",
+      "description": "Prompts moteur PRÊTS À EXÉCUTER. engine/mode/sound viennent d'ENGINE-FACTS (provenance obligatoire), jamais devinés.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "engine", "prompt", "provenance"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "engine": { "type": "string", "description": "Moteur (ex: kling3_0, seedance, higgsfield nano_banana_2) — nom exact ENGINE-FACTS." },
+          "mode": { "type": "string", "description": "Mode moteur (ex: std, pro)." },
+          "sound": { "type": "string", "enum": ["on", "off"], "description": "Défaut off pour i2v Kling (son auto = parasite, ENGINE-FACTS)." },
+          "image_ref": { "type": "string", "description": "Ref image de départ (character sheet / plate) pour i2v." },
+          "prompt": { "type": "string" },
+          "provenance": { "type": "string", "description": "Source du choix moteur/mode (ex: 'ENGINE-FACTS 2026-07-14 kling3_0 std sound:off')." }
+        }
+      }
+    },
+
+    "captions": {
+      "type": "object",
+      "description": "Style sous-titres (PRODUCTION-RULES: 1 ligne max).",
+      "required": ["style", "max_lines"],
+      "additionalProperties": false,
+      "properties": {
+        "style": { "type": "string", "enum": ["karaoke", "block", "none"] },
+        "max_lines": { "type": "integer", "const": 1 },
+        "preset": { "type": "string", "description": "Preset CapCut-CaptionStyling (ex: CC-DerStil)." }
+      }
+    },
+
+    "gates": {
+      "type": "object",
+      "description": "Contraintes de sortie IMPORTÉES du SOT. 'source' pointe le fichier SOT; les valeurs sont remplies par le compilateur à la volée. Le self-check ASSERT qu'elles matchent le module réel.",
+      "required": ["target_duration_s", "shot_duration_s", "source", "checks"],
+      "additionalProperties": false,
+      "properties": {
+        "target_duration_s": {
+          "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2,
+          "description": "[min,max] durée finale, = TIKTOK_TARGET_S importé."
+        },
+        "shot_duration_s": {
+          "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2,
+          "description": "[min,max] durée d'un plan, = TIKTOK_SHOT_S importé."
+        },
+        "aspect_ratio": { "type": "string", "const": "9:16" },
+        "source": { "type": "string", "description": "Chemin du SOT (Shared/tiktok-spec/tiktok_duration.py)." },
+        "checks": {
+          "type": "array", "items": { "type": "string" },
+          "description": "Gates à faire tourner avant rendu (durée, pacing, 9:16, captions 1 ligne, silences coupés)."
+        }
+      }
+    }
+  }
+}
