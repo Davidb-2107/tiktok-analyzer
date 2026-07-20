@@ -1095,20 +1095,31 @@ async def analyze_batch(request: BatchAnalyzeRequest):
     return {"jobs": jobs, "rejected": rejected}
 
 
+# /channel/top is public with no auth: bound concurrent yt-dlp enumerations
+# so abusers can't saturate the threadpool nor burn the VPS IP's anti-bot
+# budget with TikTok (spec 2026-07-20-channel-watch-design.md §3).
+_ENUM_SEMAPHORE = asyncio.Semaphore(2)
+
+
 @app.get("/channel/top")
-async def channel_top(url: str, n: int = 10):
-    """Enumerate a channel/profile page (yt-dlp flat playlist) and return its
-    top-N videos by view count — the entry point of the format-study chain
-    (channel URL -> top videos -> /analyze/batch -> extract-format)."""
+async def channel_top(url: str, n: int = 10, order: str = "views"):
+    """Enumerate a channel/profile page (yt-dlp flat playlist).
+    order=views (default): top-N by view count — the format-study entry point.
+    order=recent: platform listing order (newest first, pins included) — the
+    channel-watch entry point (dedup happens downstream in n8n)."""
     _validate_url_domain(url)
-    n = max(1, min(n, 20))
+    if order not in ("views", "recent"):
+        raise HTTPException(status_code=422, detail="order must be 'views' or 'recent'")
+    n = max(1, min(n, 50 if order == "recent" else 20))
 
     def enumerate_channel() -> list[dict]:
         opts = {
             "extract_flat": True,
             "quiet": True,
             "no_warnings": True,
-            "playlistend": 200,  # enumeration cap; enough to find a channel's tops
+            # recent: only the head of the listing is needed (less scraping
+            # signal); views: wide window to find a channel's tops.
+            "playlistend": n if order == "recent" else 200,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -1126,11 +1137,13 @@ async def channel_top(url: str, n: int = 10):
                     "duration": e.get("duration"),
                 }
             )
-        vids.sort(key=lambda v: v["views"] or 0, reverse=True)
+        if order == "views":
+            vids.sort(key=lambda v: v["views"] or 0, reverse=True)
         return vids
 
     try:
-        vids = await asyncio.to_thread(enumerate_channel)
+        async with _ENUM_SEMAPHORE:
+            vids = await asyncio.to_thread(enumerate_channel)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Channel enumeration failed: {exc}")
     if not vids:
