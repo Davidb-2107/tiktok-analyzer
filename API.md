@@ -25,7 +25,7 @@ Transcription is automatic when the source has no captions (local faster-whisper
 |--------|------|---------|
 | `POST` | `/analyze` | Create a job. Body: `{ url, fps?, start_s?, end_s?, webhook_url?, transcribe? }`. `fps` omitted → adaptive. `start_s`/`end_s` → analyze only that window (denser sampling, skips the hook pass). `webhook_url` → final payload POSTed there on `done`/`error`. `transcribe: false` → frames + OCR only (no Whisper/captions/audio; `transcript` stays null), with a looser duration cap (`MAX_NOTRANSCRIBE_DURATION_SEC`, default 1800s) for long footage QC. |
 | `POST` | `/analyze/batch` | Create up to 20 jobs at once. Body: `{ urls, fps?, project?, webhook_url?, transcribe? }`. Returns `{ jobs: [{url, job_id}], rejected: [{url, reason}] }` — invalid/over-cap URLs are rejected per-URL, the rest proceed. |
-| `GET`  | `/channel/top?url=<channel-url>&n=10` | Top-N videos of a channel/profile page by view count (`{ channel, enumerated, top: [{url, title, views, duration}] }`). Entry point of the format-study chain. |
+| `GET`  | `/channel/top?url=<channel-url>&n=10&order=views` | Top-N videos of a channel/profile page (`{ channel, enumerated, top: [{url, title, views, duration}] }`). `order`: `views` (default, ranked by view count, `n` clamped to 20) or `recent` (upload order, `n` clamped to 50 — used by the channel-watch n8n workflow to diff new uploads against `seen_videos`). Entry point of the format-study chain. |
 | `GET`  | `/status/{job_id}` | Poll job state (see schema below). |
 | `GET`  | `/jobs` | List all jobs. |
 | `DELETE` | `/jobs/{job_id}` | Delete job + its R2 objects. |
