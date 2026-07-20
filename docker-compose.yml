@@ -27,6 +27,8 @@ services:
       - INBOX_PSYCHO=${INBOX_PSYCHO:-/inbox/scripts}
       - INBOX_ARCHIVE=${INBOX_ARCHIVE:-}
       - VAULT_DIR=/vault
+      - VEILLE_WEBHOOK_URL=${VEILLE_WEBHOOK_URL:-}
+      - VEILLE_WEBHOOK_SECRET=${VEILLE_WEBHOOK_SECRET:-}
     restart: unless-stopped
 
   frontend:

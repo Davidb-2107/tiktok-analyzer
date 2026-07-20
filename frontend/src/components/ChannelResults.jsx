@@ -88,6 +88,64 @@ function SaveToSourcing({ api, video, channel, showToast }) {
   )
 }
 
+function WatchChannelButton({ api, url, showToast }) {
+  const [state, setState] = useState('idle') // idle | loading | followed | exists | error
+  const [errMsg, setErrMsg] = useState('')
+
+  const watch = async () => {
+    if (state === 'loading' || !url) return
+    setState('loading')
+    try {
+      const res = await fetch(`${api}/watch/channels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json()
+      if (res.status === 503) {
+        setErrMsg('Veille non configurée')
+        setState('error')
+        return
+      }
+      if (!res.ok) {
+        setErrMsg(data.detail || `HTTP ${res.status}`)
+        setState('error')
+        return
+      }
+      setState(data.created ? 'followed' : 'exists')
+    } catch (err) {
+      setErrMsg(err.message || String(err))
+      setState('error')
+    }
+  }
+
+  const label = {
+    idle: '📡 Suivre cette chaîne',
+    loading: 'Envoi…',
+    followed: 'Suivie ✓',
+    exists: 'Déjà suivie',
+    error: errMsg,
+  }[state]
+
+  return (
+    <button
+      onClick={watch}
+      disabled={state === 'loading' || state === 'followed' || state === 'exists'}
+      style={{
+        padding: '0.4rem 0.85rem',
+        borderRadius: '6px',
+        border: '1px solid #2a2a2a',
+        background: 'transparent',
+        color: state === 'error' ? '#f44336' : '#aaa',
+        cursor: state === 'loading' ? 'wait' : 'pointer',
+        fontSize: '0.85rem',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
 export default function ChannelResults({ api, url, topN, fps, project, onBack }) {
   const [channel, setChannel] = useState(null)
   const [videos, setVideos] = useState([]) // [{url,title,views,duration,job_id?,status,rejectedReason?,...status fields}]
@@ -192,6 +250,7 @@ export default function ChannelResults({ api, url, topN, fps, project, onBack })
             {channel} — top {topN} by views
           </span>
         )}
+        {channel && <WatchChannelButton api={api} url={channel} showToast={showToast} />}
       </div>
 
       {error && <div style={{ color: '#f44336' }}>{error}</div>}

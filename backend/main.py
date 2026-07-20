@@ -419,6 +419,12 @@ class SaveTranscriptRequest(BaseModel):
     views: int | None = None
 
 
+class WatchChannelRequest(BaseModel):
+    url: str
+    label: str = ""
+    niche: str = ""
+
+
 def _job_file(job_id: str) -> Path:
     return TEMP_DIR / job_id / "job.json"
 
@@ -1149,6 +1155,36 @@ async def channel_top(url: str, n: int = 10, order: str = "views"):
     if not vids:
         raise HTTPException(status_code=404, detail="No videos found (not a channel/profile URL?)")
     return {"channel": url, "enumerated": len(vids), "top": vids[:n]}
+
+
+def _post_veille_webhook(payload: dict) -> dict:
+    """Forward to the n8n channel-watch webhook (secret stays server-side).
+    Raises HTTPException(503) if unconfigured, (502) on any network/non-200
+    failure; otherwise returns the webhook's parsed JSON body as-is."""
+    veille_url = os.environ.get("VEILLE_WEBHOOK_URL", "").strip()
+    veille_secret = os.environ.get("VEILLE_WEBHOOK_SECRET", "").strip()
+    if not veille_url or not veille_secret:
+        raise HTTPException(status_code=503, detail="channel watch not configured")
+    req = urllib.request.Request(
+        veille_url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "x-veille-key": veille_secret},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"channel watch webhook failed: {exc}")
+
+
+@app.post("/watch/channels")
+async def watch_channel(request: WatchChannelRequest):
+    """Proxy into the n8n channel-watch registry webhook (channels Data
+    Table). The webhook secret never reaches the frontend."""
+    _validate_url_domain(request.url)
+    payload = {"url": request.url, "label": request.label, "niche": request.niche}
+    return await asyncio.to_thread(_post_veille_webhook, payload)
 
 
 @app.get("/frames/{job_id}/local/{frame_name}")
