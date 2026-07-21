@@ -74,6 +74,19 @@ def main():
     assert bc.parse_cards(fake) == ("AI animation", 5, "text-tease")
     assert bc.parse_cards([{"card": ""}]) is None  # aucune card -> fallback mots-clés
 
+    # Frontmatter non fermé (fichier fraîchement ingéré) -> pas de crash, corps brut.
+    assert bc.parse_frontmatter("---\nkey: v\nno closing")[0] == {}
+
+    # Readiness : neon_psycho est complète -> aucun avertissement.
+    assert bc.readiness(brief) == [], "neon_psycho devrait être prête"
+    # Brief avec TODO voix/moteur + taxonomie 'other' -> les 4 flags se lèvent.
+    stub = {
+        "script": {"voice_id": "TODO(calibrate-voice)"},
+        "prompt_pack": [{"engine": "TODO(engine-facts)"}],
+        "format": {"style": "other", "hook_mechanic": "other"},
+    }
+    assert len(bc.readiness(stub)) == 4
+
     print("OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.")
     print(
         f"  beats: {len(beats)} ({total}s)  shots: {len(brief['shots'])}  "

@@ -42,7 +42,9 @@ def parse_frontmatter(text):
     key: value (le registre n'écrit que du YAML plat), pas de lib yaml."""
     if not text.startswith("---"):
         return {}, text
-    end = text.index("\n---", 3)
+    end = text.find("\n---", 3)
+    if end == -1:  # frontmatter non fermé (fichier fraîchement ingéré) -> pas de crash
+        return {}, text
     meta = {}
     for line in text[3:end].splitlines():
         m = re.match(r"^(\w[\w-]*):\s*(.*)$", line.strip())
@@ -435,6 +437,22 @@ def compile_brief(niche, voice=None, language="fr"):
     return brief
 
 
+def readiness(brief):
+    """Signaux 'niche prête ?' lus du brief seul — les TODO/fallback silencieux
+    qu'on veut voir AVANT de faire confiance à la sortie (surtout niche fraîche).
+    Retourne la liste des manques ([] = tout couplé)."""
+    warn = []
+    if str(brief["script"]["voice_id"]).startswith("TODO"):
+        warn.append("voix NON calibrée (budget mots sur wpm _default) -> calibrate-voice")
+    if any(str(p["engine"]).startswith("TODO") for p in brief["prompt_pack"]):
+        warn.append("aucun verdict moteur dans ENGINE-FACTS -> gate pilote avant prod")
+    if brief["format"]["style"] == "other":
+        warn.append("style='other' : pas de FORMAT CARD exploitable -> extract-format")
+    if brief["format"]["hook_mechanic"] == "other":
+        warn.append("hook_mechanic='other' : mécanique de hook non résolue")
+    return warn
+
+
 def main():
     ap = argparse.ArgumentParser(description="Compile format_card -> brief.json")
     ap.add_argument("niche")
@@ -451,6 +469,13 @@ def main():
         f"  beats: {len(brief['script']['beats'])}  shots: {len(brief['shots'])}  "
         f"wpm: {brief['script']['target_wpm']}  voice: {brief['script']['voice_id']}"
     )
+    warn = readiness(brief)
+    if warn:
+        print("  ⚠ niche pas encore prête:")
+        for w in warn:
+            print(f"    - {w}")
+    else:
+        print("  ✓ couplages résolus : voix + moteur + taxonomie")
 
 
 if __name__ == "__main__":
