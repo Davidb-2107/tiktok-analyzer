@@ -42,17 +42,49 @@ ranking context matters for the formula.
    ```
    python "<sibling analyze-video dir>/analyze.py" "<url>" --start 0 --end 3
    ```
-2. Fetch the whole video (adaptive fps, hook OCR pass included):
+2. Fetch the whole video (adaptive fps, hook OCR pass included). If a **niche**
+   is in context (same condition as step 3), persist its frames + manifest by
+   pointing `--out` at a stable per-video dir under the registry — gitignored,
+   Syncthing-synced, never committed. If no niche is known, omit `--out` (fresh
+   tempdir, cleaned up in step 6):
    ```
-   python "<sibling analyze-video dir>/analyze.py" "<url>"
+   # readable folder name "<channel> - <title>" (falls back to the video id
+   # when a part is unknown). Pass --channel/--title ONLY when actually known —
+   # channel mode's channel/top gives the title; single-video mode has neither.
+   DIR=$(python "<vault root>/Projects/Sourcing/tools/frame_dir.py" "<url>" \
+           --channel "<@handle>" --title "<title>")
+   python "<sibling analyze-video dir>/analyze.py" "<url>" \
+     --out "<vault root>/Projects/Sourcing/frames/<niche>/$DIR"
    ```
-3. `Read` ALL hook-window frames in order, then all full-video frames. The
+3. If this session has a **niche** in context — the video-project this analysis
+   is for (e.g. Phase 0 research for a niche under `Projects/TikTok/<Name>`) —
+   persist the verbatim transcript to the shared Sourcing registry. **Skip this
+   step entirely if no niche is known** (e.g. standalone Sourcing exploration
+   with no target project): never guess a niche, never write to an
+   "uncategorized" bucket.
+   ```
+   python "<vault root>/Projects/Sourcing/tools/transcript_registry.py" <niche> <manifest.json from step 2> [--channel <@handle>] [--title <title>] [--views <N>]
+   ```
+   `--channel`/`--title`/`--views` are passed only when actually known (e.g.
+   `--views`/`--title` come from Step 0's `channel/top` response in channel
+   mode) — never invented. A "skip: already exists" message on stderr is
+   expected and fine (dedup by video id, not an error).
+4. `Read` ALL hook-window frames in order, then all full-video frames. The
    hook frames are the ground truth for the first-3-seconds section; the full
    frames for structure/style. Read the transcripts and overlay text from both
    manifests.
-4. Fill the format card below. Every field, even if the answer is "none/NA" —
+5. Fill the format card below. Every field, even if the answer is "none/NA" —
    missing fields make cards incomparable.
-5. Clean up scratch dirs (`rm -rf`) after the analysis is delivered.
+   **Archive it**: if a niche is in context (same condition as step 3), append
+   the finished card verbatim to that video's registry file
+   (`Projects/Sourcing/transcripts/<niche>/<video_id>.md`), after the existing
+   sections, keeping the `## FORMAT CARD — ...` heading. This is what makes the
+   card machine-readable later (`brief_compiler.py` parses the fixed taxonomy
+   labels — a prose-only synthesis loses them). Skip if no niche is known.
+6. Clean up scratch dirs (`rm -rf`) after the analysis is delivered — the
+   hook-window tempdir (step 1), and the full-video tempdir (step 2) **only when
+   no niche was in context**. NEVER delete a persisted
+   `Projects/Sourcing/frames/<niche>/<dir>/` dir — keeping it is the point.
 
 ## Format card (fixed taxonomy — do not add/remove/rename fields)
 
@@ -82,14 +114,18 @@ ranking context matters for the formula.
 
 ### Structure
 - **Beats:** <timeline of the video's segments, e.g. "0–3 hook · 3–15 setup ·
-  15–40 payoff list · 40–45 CTA">
+  15–40 payoff list · 40–45 CTA". The last beat MUST quote the video's final
+  sentence VERBATIM from the transcript — endings are where false "signature"
+  devices get invented>
 - **Sound:** <voiceover | on-camera speech | trending audio | music only> ·
   <music mood if any>
 - **CTA:** <what the viewer is asked to do, or "none">
 
 ### Repro recipe
 <3–6 imperative lines: exactly what to shoot/generate/write to clone this
-format with a different topic. Concrete enough to hand to a producer.>
+format with a different topic. Concrete enough to hand to a producer.
+Clone the SPREAD mechanics (hook, retention device, pacing) — NOT the
+production polish. A well-shot video that doesn't spread has a bad format.>
 ```
 
 ## Channel mode (2+ URLs)
@@ -110,6 +146,16 @@ After producing every card, add a synthesis:
 The formula only claims what at least ~2/3 of the cards support — call out
 contradictions instead of averaging them away.
 
+**Evidence rule for verbatim devices.** Any claimed constant that is a
+word-for-word device (closing line, catchphrase, recurring overlay text) must
+be proven by the exact quote from EACH video's transcript, cited in the
+synthesis. Quotes that differ = NOT a constant — report the variation instead.
+Never state a verbatim constant for a video whose transcript was not archived
+(step 3). Incident 2026-07-22: an "and remember," truncated-closer was claimed
+as a wisejourney constant with no transcript archived; re-verification showed
+every top ends on a COMPLETE sentence — the false rule had already shipped
+into a niche's script gate.
+
 ## Notes
 
 - Engagement metrics (views/likes) are in each job's `script.txt` header via
@@ -119,3 +165,7 @@ contradictions instead of averaging them away.
 - Sibling skill path: this repo keeps skills in `skills/` and `.claude/skills/`;
   from `~/.claude/skills/extract-format/`, analyze.py is at
   `~/.claude/skills/analyze-video/analyze.py`.
+- Vault root resolution: `<vault root>` is the Wiki_Claude vault directory
+  (containing both `Projects/` and `Shared/`). If the agent is running from a
+  niche-project session context, this path is already known; otherwise, ask the
+  user for the vault root path rather than guessing.
