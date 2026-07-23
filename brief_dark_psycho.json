@@ -1,0 +1,333 @@
+{
+  "schema_version": "0.1",
+  "niche": "dark_psycho",
+  "source": {
+    "videos": [
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7611902656759549191",
+        "video_id": "7611902656759549191",
+        "channel": "@darkpsychology1100",
+        "title": "#Ego #darkpsychogy #fallenangel #minddecoded #CapCut",
+        "views": 898
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7616018783433444628",
+        "video_id": "7616018783433444628",
+        "channel": "@darkpsychology1100",
+        "title": "#fallenangel #darkpsychology #minddecoding #fyp",
+        "views": 1120
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7616099002488163605",
+        "video_id": "7616099002488163605",
+        "channel": "@darkpsychology1100",
+        "title": "#psychologyfacts #minddecoding #darkpsychology #fyp #CapCut",
+        "views": 532
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7618688210176101653",
+        "video_id": "7618688210176101653",
+        "channel": "@darkpsychology1100",
+        "title": "#darkpsychology #epicurus #minddecoding #fyp #CapCut",
+        "views": 827
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7620007741423226133",
+        "video_id": "7620007741423226133",
+        "channel": "@darkpsychology1100",
+        "title": "Respect isn't earned the way you think. #darkpsychology #minddecoding #fyp #mindset",
+        "views": 83900
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7625587580091796744",
+        "video_id": "7625587580091796744",
+        "channel": "@darkpsychology1100",
+        "title": "You're not SPECIAL, you're available.",
+        "views": 1200000
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7627610368138956039",
+        "video_id": "7627610368138956039",
+        "channel": "@darkpsychology1100",
+        "title": "You're always there for everyone, but who's there for you?",
+        "views": 98200
+      },
+      {
+        "url": "https://www.tiktok.com/@darkpsychology1100/video/7632771844407299346",
+        "video_id": "7632771844407299346",
+        "channel": "@darkpsychology1100",
+        "title": "Are you really a Stoic?",
+        "views": 106700
+      }
+    ],
+    "format_card_ref": "Projects/Sourcing/transcripts/dark_psycho/",
+    "channel_formula_ref": "Projects/Sourcing/formats/darkpsychology1100.md"
+  },
+  "format": {
+    "style": "AI animation",
+    "realism": 5,
+    "hook_mechanic": "question",
+    "hook_template": "[plan noir, figure menaçante (jester/statue) émerge lentement, halo rouge] + texte haut de cadre : « YOU THINK [croyance]… » + VO grave : « You think [croyance flatteuse]. That's not [X]. That's [Y humiliant]. » + 0 cut — le choc est verbal et textuel, pas du montage",
+    "constant": {
+      "voix_off": "masculine grave, lente, sentencieuse, quasi chuchotée. Jamais de visage réel.",
+      "visuel": "rendu IA sombre (jester maléfique / statues de marbre / peintures baroques), fond noir dominant, sujet unique détouré au halo néon (rouge côté hits).",
+      "quasi_zero_cut": "une scène-tableau, rétention par sujet qui avance/se révèle lentement + fond qui mute (foule → néant → flammes) + texte re-cadencé ~1,5 s.",
+      "captions": "blocs 1–6 mots synchronisés à la voix, bicolores (mots-clés rouge/jaune).",
+      "anglais_2e_personne_4885_s_aucun_cta_pla": "Anglais, 2e personne, 48–85 s, aucun CTA plateforme (jamais follow/like)."
+    },
+    "variable_slots": [
+      "topic"
+    ]
+  },
+  "script": {
+    "language": "en",
+    "voice_id": "TODO(calibrate-voice)",
+    "target_wpm": 200.0,
+    "wpm_source": "TODO: aucun profil voix pour la niche 'dark_psycho' — lancer calibrate-voice (valeur _default non calibrée)",
+    "beats": [
+      {
+        "id": "hook",
+        "role": "hook",
+        "t_start": 0.0,
+        "t_end": 3.0,
+        "text": "<hook, ~10 mots> template: [plan noir, figure menaçante (jester/statue) émerge lentement, halo rouge] + texte haut de cadre : « YOU THINK [croyance]… » + VO grave : « You think [croyance flatteuse]. That's not [X]. That's [Y humiliant]. » + 0 cut — le choc est verbal et textuel, pas du montage"
+      },
+      {
+        "id": "setup",
+        "role": "setup",
+        "t_start": 3.0,
+        "t_end": 18.8,
+        "text": "<setup du <topic>, ~53 mots — poser le contexte, vocabulaire du format>"
+      },
+      {
+        "id": "payoff",
+        "role": "payoff",
+        "t_start": 18.8,
+        "t_end": 66.0,
+        "text": "<payoff, ~157 mots — dérouler la structure du format jusqu'à la clôture émotionnelle>"
+      },
+      {
+        "id": "cta",
+        "role": "cta",
+        "t_start": 66.0,
+        "t_end": 68.5,
+        "text": "<cta, ~8 mots>"
+      }
+    ]
+  },
+  "shots": [
+    {
+      "id": "s1",
+      "beat": "hook",
+      "duration_s": 3.0,
+      "prompt_ref": "p_hero",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s2",
+      "beat": "setup",
+      "duration_s": 2.63,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s3",
+      "beat": "setup",
+      "duration_s": 2.63,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s4",
+      "beat": "setup",
+      "duration_s": 2.63,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s5",
+      "beat": "setup",
+      "duration_s": 2.63,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s6",
+      "beat": "setup",
+      "duration_s": 2.63,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s7",
+      "beat": "setup",
+      "duration_s": 2.63,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s8",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s9",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s10",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s11",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s12",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s13",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s14",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s15",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s16",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s17",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s18",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s19",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s20",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s21",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s22",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s23",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_out"
+    },
+    {
+      "id": "s24",
+      "beat": "payoff",
+      "duration_s": 2.78,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    },
+    {
+      "id": "s25",
+      "beat": "cta",
+      "duration_s": 2.5,
+      "prompt_ref": "p_body",
+      "motion": "ken_burns_in"
+    }
+  ],
+  "prompt_pack": [
+    {
+      "id": "p_hero",
+      "engine": "TODO(engine-facts)",
+      "prompt": "hero shot (hook 0-3s): masculine grave, lente, sentencieuse, quasi chuchotée. Jamais de visage réel. — plan fixe / drift lent — <topic>",
+      "provenance": "TODO: aucun fait 'défaut dark_psycho' dans ENGINE-FACTS — tester les moteurs (gate pilote) puis consigner le verdict avant production"
+    },
+    {
+      "id": "p_body",
+      "engine": "TODO(engine-facts)",
+      "prompt": "masculine grave, lente, sentencieuse, quasi chuchotée. Jamais de visage réel. — plan fixe / drift lent — beat courant du script, <topic>",
+      "provenance": "TODO: aucun fait 'défaut dark_psycho' dans ENGINE-FACTS — tester les moteurs (gate pilote) puis consigner le verdict avant production"
+    }
+  ],
+  "captions": {
+    "style": "karaoke",
+    "max_lines": 1,
+    "preset": "CC-DerStil"
+  },
+  "gates": {
+    "target_duration_s": [
+      62.0,
+      75.0
+    ],
+    "shot_duration_s": [
+      1.5,
+      4.0
+    ],
+    "aspect_ratio": "9:16",
+    "source": "Shared/tiktok-spec/tiktok_duration.py",
+    "checks": [
+      "durée finale dans target_duration_s",
+      "chaque shot dans shot_duration_s",
+      "9:16",
+      "captions <=1 ligne",
+      "silences coupés"
+    ]
+  }
+}
