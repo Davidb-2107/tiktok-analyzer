@@ -243,7 +243,7 @@ def load_voice(niche, alias, language):
         # ponytail: défaut = alias le plus utilisé en prod (runs), tiebreak nom court
         alias = max(cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k)))
 
-    wpm, label = voice_wpm.get_wpm(alias, language=language)
+    wpm, label = voice_wpm.get_wpm(alias, language=language, postproc="cut")
     profile = voice_wpm.get_profile(alias, language=language) or {}
     voice_id = profile.get("voice_id", f"TODO(profil {alias} sans voice_id)")
     return voice_id, wpm, f"voice_wpm.json '{alias}' lang={language}: {label}"
