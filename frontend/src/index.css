@@ -12,3 +12,48 @@ body {
   max-width: 1200px;
   margin: 0 auto;
 }
+
+.collapsible-section {
+  margin-top: 1.5rem;
+}
+
+.collapsible-section > summary {
+  list-style: none;
+}
+
+.collapsible-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-section__summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #2a2a2a;
+  color: #f0f0f0;
+  cursor: pointer;
+  font-size: 1.1rem;
+  font-weight: 650;
+}
+
+.collapsible-section__summary:focus-visible {
+  outline: 2px solid #fe2c55;
+  outline-offset: 4px;
+}
+
+.collapsible-section__chevron {
+  color: #fe2c55;
+  font-size: 1.45rem;
+  line-height: 0.8;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.collapsible-section[open] .collapsible-section__chevron {
+  transform: rotate(90deg);
+}
+
+.collapsible-section__content {
+  padding-top: 0.9rem;
+}

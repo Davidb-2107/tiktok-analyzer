@@ -34,6 +34,10 @@ There are no test or lint scripts configured.
 
 **Frontend** (`frontend/src/App.jsx`) is a React SPA. It submits a URL, then polls `GET /status/{job_id}` every 500ms to drive UI state until the job reaches `done` or `error`.
 
+When enabled, PySceneDetect detects technical shot changes and exposes them as
+an additive `scenes` field with midpoint keyframes. It does not replace the
+regular frame sampling used by OCR.
+
 **Job state machine:**
 ```
 pending → downloading → extracting → frames_ready → done (captions found)
@@ -90,6 +94,10 @@ HF_CACHE_DIR            # Host path mounted as /root/.cache/huggingface to reuse
 HOOK_WINDOW_S           # Hook-microscope OCR pass window (seconds from start). Default: 5
 HOOK_FPS                # Hook-microscope OCR pass density. Default: 2
 WINDOW_FPS              # Frame density for a caller-requested start_s/end_s window. Default: 2
+SCENE_DETECTION_ENABLED # Enable additive PySceneDetect technical-cut detection. Default: false
+SCENE_DETECT_THRESHOLD  # Content-detection threshold. Default: 27
+SCENE_MIN_LEN_FRAMES    # Minimum scene length in frames. Default: 15
+SCENE_MAX_KEYFRAMES     # Maximum midpoint images to extract/upload. Default: 120
 ```
 
 ## Frontend Polling & Error Handling

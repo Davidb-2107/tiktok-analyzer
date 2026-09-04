@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 import boto3
+import scenes as scene_detection
 import voice
 import yt_dlp
 from fastapi import FastAPI, HTTPException
@@ -157,6 +158,24 @@ HOOK_FPS = float(os.environ.get("HOOK_FPS", "2"))
 # same rationale as HOOK_FPS above but independently tunable since a caller-
 # requested window and the opening-seconds hook can diverge later.
 WINDOW_FPS = float(os.environ.get("WINDOW_FPS", "2"))
+
+# Scene detection is additive and starts disabled in production. Regular frames
+# remain the canonical OCR/hook stream regardless of this setting.
+SCENE_DETECTION_ENABLED = os.environ.get("SCENE_DETECTION_ENABLED", "false").lower() in {"1", "true", "yes"}
+SCENE_DETECT_THRESHOLD = float(os.environ.get("SCENE_DETECT_THRESHOLD", "27"))
+SCENE_MIN_LEN_FRAMES = int(os.environ.get("SCENE_MIN_LEN_FRAMES", "15"))
+
+
+def _scene_max_keyframes_from_env() -> int:
+    try:
+        configured = int(os.environ.get("SCENE_MAX_KEYFRAMES", "120"))
+    except (TypeError, ValueError):
+        logger.warning("invalid SCENE_MAX_KEYFRAMES; using default 120")
+        configured = 120
+    return max(0, min(configured, 120))
+
+
+SCENE_MAX_KEYFRAMES = _scene_max_keyframes_from_env()
 
 _whisper_model: WhisperModel | None = None
 
@@ -320,7 +339,7 @@ def _write_script(job_id: str) -> None:
     if not job.get("transcript"):
         return
     body = _build_script_text(job)
-    (TEMP_DIR / job_id / "script.txt").write_text(body, encoding="utf-8")
+    (_job_dir(job_id) / "script.txt").write_text(body, encoding="utf-8")
     project = job.get("project")
     if project == ARCHIVE_PROJECT:
         return
@@ -406,6 +425,7 @@ class JobResponse(BaseModel):
     # whitelists through this model, so absent fields here vanish from the UI.
     created_at: str | None = None
     author: str | None = None
+    scenes: list[dict] | None = None
 
 
 class UserTagsRequest(BaseModel):
@@ -426,19 +446,43 @@ class WatchChannelRequest(BaseModel):
 
 
 def _job_file(job_id: str) -> Path:
-    return TEMP_DIR / job_id / "job.json"
+    return _job_dir(job_id) / "job.json"
+
+
+def _job_dir(job_id: str) -> Path:
+    """Return a canonical job directory, rejecting path-like identifiers."""
+    if not isinstance(job_id, str):
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        parsed = uuid.UUID(job_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=404, detail="Job not found")
+    if str(parsed) != job_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    root = TEMP_DIR.resolve()
+    candidate = (root / job_id).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return candidate
 
 
 def _frames_dir(job_id: str) -> Path:
-    return TEMP_DIR / job_id / "frames"
+    return _job_dir(job_id) / "frames"
 
 
 def _hook_frames_dir(job_id: str) -> Path:
-    return TEMP_DIR / job_id / "frames_hook"
+    return _job_dir(job_id) / "frames_hook"
+
+
+def _scene_frames_dir(job_id: str) -> Path:
+    return _job_dir(job_id) / "scene_frames"
 
 
 def _audio_path(job_id: str) -> Path:
-    return TEMP_DIR / job_id / "audio.mp3"
+    return _job_dir(job_id) / "audio.mp3"
 
 
 def _load_job(job_id: str) -> dict | None:
@@ -473,20 +517,57 @@ def _resolve_frames(job_id: str, job: dict) -> dict:
     done: frames are R2 keys — presign them.
     """
     status = job.get("status")
-    frames = job.get("frames", [])
-    if not frames:
-        return job
-
     if status == "done":
-        return {**job, "frames": [_presign_key(k) for k in frames]}
+        resolved = {**job}
+        frames = job.get("frames", [])
+        if frames:
+            resolved["frames"] = [_presign_key(k) for k in frames]
+        if job.get("scenes") is not None:
+            resolved["scenes"] = [
+                {
+                    **scene,
+                    "keyframe": _presign_key(scene["keyframe"]) if scene.get("keyframe") else None,
+                }
+                for scene in job["scenes"]
+            ]
+        return resolved
 
     # frames_ready, transcribing: local filenames
     return job
 
 
+def _detect_scenes_best_effort(
+    video_path: Path,
+    start_s: float | None = None,
+    end_s: float | None = None,
+) -> list[dict]:
+    if not SCENE_DETECTION_ENABLED:
+        return []
+    try:
+        return scene_detection.detect_scenes(
+            video_path,
+            start_s=start_s,
+            end_s=end_s,
+            threshold=SCENE_DETECT_THRESHOLD,
+            min_scene_len=SCENE_MIN_LEN_FRAMES,
+        )
+    except Exception:
+        logger.warning("scene detection failed; continuing without scenes", exc_info=True)
+        return []
+
+
 def _download_video(url: str, output_path: Path) -> tuple[Path, float, str | None, dict]:
     ydl_opts = {
-        "format": "best[height<=1080]/best[ext=mp4]/best",
+        # Prefer separate high-quality video and audio streams. TikTok can
+        # advertise an H.265 format as `aac` while delivering a video-only
+        # MP4, so prefer a combined H.264 format with a real audio codec
+        # before falling back to the generic best format.
+        "format": (
+            "bestvideo[height<=1080]+bestaudio/"
+            "best[height<=1080][vcodec^=h264][acodec!=none]/"
+            "best[height<=1080][acodec!=none]/best"
+        ),
+        "merge_output_format": "mp4",
         "outtmpl": str(output_path / "%(id)s.%(ext)s"),
         "quiet": True,
         "no_warnings": True,
@@ -586,6 +667,82 @@ def _extract_frames(
     return [p.name for p in sorted(out_dir.glob("frame_*.jpg"))]
 
 
+def _extract_scene_keyframes(
+    video_path: Path, job_id: str, scene_list: list[dict], max_keyframes: int
+) -> list[dict]:
+    """Extract one representative midpoint image for selected scenes.
+
+    Scene intervals are always retained. A failed or unselected extraction is
+    represented by ``keyframe: None`` so a single bad frame cannot sink the
+    job or hide the detected technical cut.
+    """
+    scenes_with_keyframes = []
+    for raw_scene in scene_list:
+        if not isinstance(raw_scene, dict):
+            logger.warning("ignoring malformed detected scene: expected object")
+            continue
+        try:
+            start = float(raw_scene["start"])
+            end = float(raw_scene["end"])
+        except (KeyError, TypeError, ValueError):
+            logger.warning("ignoring malformed detected scene: invalid timestamps")
+            continue
+        if end <= start:
+            logger.warning("ignoring malformed detected scene: non-positive interval")
+            continue
+        scenes_with_keyframes.append({**raw_scene, "keyframe": None})
+
+    try:
+        out_dir = _scene_frames_dir(job_id)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        selected = scene_detection.select_keyframe_indices(len(scenes_with_keyframes), max_keyframes)
+    except Exception:
+        logger.warning("scene keyframe setup failed; preserving scene intervals", exc_info=True)
+        return scenes_with_keyframes
+
+    for position, scene in enumerate(scenes_with_keyframes):
+        if position not in selected:
+            continue
+
+        try:
+            filename = f"scene_{position:03d}.jpg"
+            output_path = out_dir / filename
+            timestamp = scene_detection.keyframe_time(scene)
+
+            def run(extra: list[str]) -> subprocess.CompletedProcess:
+                cmd = [
+                    "ffmpeg",
+                    *extra,
+                    "-ss",
+                    str(timestamp),
+                    "-i",
+                    str(video_path),
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "format=yuvj420p",
+                    "-q:v",
+                    "2",
+                    str(output_path),
+                    "-y",
+                ]
+                return subprocess.run(cmd, capture_output=True, text=True)
+
+            result = run([])
+            if result.returncode != 0 and "Invalid color space" in result.stderr:
+                result = run(
+                    ["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
+                )
+            if result.returncode != 0 or not output_path.exists():
+                logger.warning("scene keyframe extraction failed for scene %s: %s", position, result.stderr)
+                continue
+            scene["keyframe"] = filename
+        except Exception:
+            logger.warning("scene keyframe extraction failed for scene %s", position, exc_info=True)
+
+    return scenes_with_keyframes
+
+
 def _ahash(path: Path, size: int = 8) -> int:
     """8x8 grayscale average-hash -> 64-bit int. PIL only (transitive dep of
     rapidocr-onnxruntime, already installed)."""
@@ -674,6 +831,27 @@ def _upload_frames(job_id: str, frame_names: list[str]) -> list[str]:
     return keys
 
 
+def _upload_scene_keyframes(job_id: str, scene_list: list[dict]) -> list[dict]:
+    """Upload scene keyframes separately without compromising regular frames."""
+    src_dir = _scene_frames_dir(job_id)
+    uploaded = []
+    for raw_scene in scene_list:
+        scene = dict(raw_scene)
+        filename = scene.get("keyframe")
+        if not filename:
+            uploaded.append(scene)
+            continue
+        try:
+            key = f"{job_id}/scenes/{filename}"
+            s3.upload_file(str(src_dir / filename), R2_BUCKET, key, ExtraArgs={"ContentType": "image/jpeg"})
+            scene["keyframe"] = key
+        except Exception:
+            logger.warning("scene keyframe upload failed for %s", filename, exc_info=True)
+            scene["keyframe"] = None
+        uploaded.append(scene)
+    return uploaded
+
+
 def _ocr_main_and_hook(
     job_id: str, frame_names: list[str], fps: float, hook_names: list[str]
 ) -> tuple[tuple[str, list[dict]], tuple[str, list[dict]]]:
@@ -710,7 +888,7 @@ async def _run_job(
     end_s: float | None = None,
     transcribe: bool = True,
 ) -> None:
-    job_dir = TEMP_DIR / job_id
+    job_dir = _job_dir(job_id)
     window = start_s is not None or end_s is not None
 
     try:
@@ -752,6 +930,12 @@ async def _run_job(
                 )
             except Exception:
                 hook_frame_names = []
+
+        scene_list = await asyncio.to_thread(_detect_scenes_best_effort, video_path, start_s, end_s)
+        if scene_list:
+            scene_list = await asyncio.to_thread(
+                _extract_scene_keyframes, video_path, job_id, scene_list, SCENE_MAX_KEYFRAMES
+            )
         video_path.unlink(missing_ok=True)
 
         # Frames are local — frontend can display them immediately
@@ -765,6 +949,7 @@ async def _run_job(
             fps=fps,
             start_s=start_s,
             end_s=end_s,
+            scenes=scene_list,
         )
 
         # Captions check first (cheap — yt-dlp metadata). Decides whether
@@ -780,6 +965,7 @@ async def _run_job(
         if transcript or not transcribe:
             gather_tasks = [
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
+                asyncio.to_thread(_upload_scene_keyframes, job_id, scene_list),
                 asyncio.to_thread(_ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names),
             ]
             if transcribe:
@@ -787,17 +973,19 @@ async def _run_job(
                     asyncio.to_thread(voice.analyze_voice, audio_path, segments, duration, HOOK_WINDOW_S)
                 )
             gather_results = await asyncio.gather(*gather_tasks)
-            (r2_keys, ((overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments))) = (
+            (r2_keys, scene_r2, ((overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments))) = (
                 gather_results[0],
                 gather_results[1],
+                gather_results[2],
             )
-            voice_metrics = gather_results[2] if transcribe else None
+            voice_metrics = gather_results[3] if transcribe else None
         else:
             # No captions: frames still local. Mark transcribing so the UI shows
             # progress, then fan out upload + Whisper concurrently.
             _update_job(job_id, status="transcribing", frames=frame_names)
-            r2_keys, transcribe_result, ocr_result = await asyncio.gather(
+            r2_keys, scene_r2, transcribe_result, ocr_result = await asyncio.gather(
                 asyncio.to_thread(_upload_frames, job_id, frame_names),
+                asyncio.to_thread(_upload_scene_keyframes, job_id, scene_list),
                 asyncio.to_thread(_transcribe, audio_path),
                 asyncio.to_thread(_ocr_main_and_hook, job_id, frame_names, fps, hook_frame_names),
             )
@@ -809,6 +997,7 @@ async def _run_job(
 
         shutil.rmtree(_frames_dir(job_id), ignore_errors=True)
         shutil.rmtree(_hook_frames_dir(job_id), ignore_errors=True)
+        shutil.rmtree(_scene_frames_dir(job_id), ignore_errors=True)
         # Keep audio_path on disk (temp/{job_id}/audio.mp3) — needed by the
         # /audio.mp3 endpoint and the inbox mirror for downstream voice
         # analysis (parselmouth/Praat, ElevenLabs cloning, etc.).
@@ -823,6 +1012,7 @@ async def _run_job(
             hook_overlay_text=hook_overlay_text or None,
             hook_overlay_segments=hook_overlay_segments or None,
             voice=voice_metrics,
+            scenes=scene_r2,
         )
         _write_script(job_id)
         _write_audio(job_id)
@@ -1019,7 +1209,7 @@ def _register_job(url: str, project: str | None, webhook_url: str | None, transc
     if _count_active_jobs() >= MAX_PENDING_JOBS:
         raise HTTPException(status_code=429, detail=f"Job backlog full (max {MAX_PENDING_JOBS} pending).")
     job_id = str(uuid.uuid4())
-    (TEMP_DIR / job_id).mkdir(parents=True, exist_ok=True)
+    _job_dir(job_id).mkdir(parents=True, exist_ok=True)
     _save_job(
         job_id,
         {
@@ -1189,8 +1379,11 @@ async def watch_channel(request: WatchChannelRequest):
 
 @app.get("/frames/{job_id}/local/{frame_name}")
 async def get_local_frame(job_id: str, frame_name: str):
-    frame_path = _frames_dir(job_id) / frame_name
-    if not frame_path.exists():
+    if not frame_name or "/" in frame_name or "\\" in frame_name or Path(frame_name).name != frame_name:
+        raise HTTPException(status_code=404, detail="Frame not found")
+    frame_dir = _scene_frames_dir(job_id) if re.fullmatch(r"scene_\d+\.jpg", frame_name) else _frames_dir(job_id)
+    frame_path = frame_dir / frame_name
+    if not frame_path.is_file():
         raise HTTPException(status_code=404, detail="Frame not found")
     return FileResponse(frame_path, media_type="image/jpeg")
 
@@ -1239,7 +1432,7 @@ async def get_captions_srt(job_id: str):
 
 @app.get("/jobs/{job_id}/script.txt")
 async def get_script(job_id: str):
-    script_path = TEMP_DIR / job_id / "script.txt"
+    script_path = _job_dir(job_id) / "script.txt"
     if not script_path.exists():
         raise HTTPException(status_code=404, detail="Script not found")
     job = _load_job(job_id) or {}
@@ -1449,18 +1642,50 @@ async def list_jobs():
     return jobs
 
 
+def _delete_r2_job_prefix(job_id: str) -> None:
+    """Delete every R2 object belonging to a validated job prefix."""
+    _job_dir(job_id)  # Validate before constructing an object-store prefix.
+    prefix = f"{job_id}/"
+    continuation_token = None
+
+    while True:
+        params = {"Bucket": R2_BUCKET, "Prefix": prefix}
+        if continuation_token:
+            params["ContinuationToken"] = continuation_token
+        page = s3.list_objects_v2(**params)
+        keys = [
+            item["Key"]
+            for item in page.get("Contents") or []
+            if isinstance(item.get("Key"), str) and item["Key"].startswith(prefix)
+        ]
+        for offset in range(0, len(keys), 1000):
+            batch = [{"Key": key} for key in keys[offset : offset + 1000]]
+            s3.delete_objects(Bucket=R2_BUCKET, Delete={"Objects": batch})
+
+        if not page.get("IsTruncated"):
+            return
+        next_token = page.get("NextContinuationToken")
+        if not next_token:
+            logger.warning("R2 prefix listing truncated without continuation token for %s", job_id)
+            return
+        continuation_token = next_token
+
+
 @app.delete("/jobs/{job_id}", status_code=204)
 async def delete_job(job_id: str):
+    job_dir = _job_dir(job_id)
     job = _load_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Only delete R2 objects if frames are R2 keys (done status)
-    if job.get("status") == "done" and job.get("frames"):
-        objects = [{"Key": key} for key in job["frames"]]
-        s3.delete_objects(Bucket=R2_BUCKET, Delete={"Objects": objects})
-
-    shutil.rmtree(TEMP_DIR / job_id, ignore_errors=True)
+    try:
+        _delete_r2_job_prefix(job_id)
+    except Exception:
+        # Local deletion must remain usable even if R2 is temporarily
+        # unavailable. The prefix operation is retried by external cleanup.
+        logger.warning("R2 cleanup failed for deleted job %s", job_id, exc_info=True)
+    finally:
+        shutil.rmtree(job_dir, ignore_errors=True)
 
 
 @app.get("/jobs/{job_id}/thumbnail")

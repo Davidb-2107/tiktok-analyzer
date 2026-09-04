@@ -1,35 +1,38 @@
 import { useState } from 'react'
+import CollapsibleSection from './CollapsibleSection.js'
 
 export default function FrameGallery({ frames }) {
   const [selected, setSelected] = useState(null)
 
   return (
     <>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-        gap: '0.75rem',
-      }}>
-        {frames.map((url, i) => (
-          <img
-            key={url}
-            src={url}
-            alt={`frame ${i + 1}`}
-            onClick={() => setSelected(url)}
-            style={{
-              width: '100%',
-              aspectRatio: '9/16',
-              objectFit: 'cover',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              border: '2px solid transparent',
-              transition: 'border-color 0.15s',
-            }}
-            onMouseEnter={e => e.target.style.borderColor = '#fe2c55'}
-            onMouseLeave={e => e.target.style.borderColor = 'transparent'}
-          />
-        ))}
-      </div>
+      <CollapsibleSection title="Sampled frames">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+          gap: '0.75rem',
+        }}>
+          {frames.map((url, i) => (
+            <img
+              key={url}
+              src={url}
+              alt={`frame ${i + 1}`}
+              onClick={() => setSelected(url)}
+              style={{
+                width: '100%',
+                aspectRatio: '9/16',
+                objectFit: 'cover',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                border: '2px solid transparent',
+                transition: 'border-color 0.15s',
+              }}
+              onMouseEnter={e => e.target.style.borderColor = '#fe2c55'}
+              onMouseLeave={e => e.target.style.borderColor = 'transparent'}
+            />
+          ))}
+        </div>
+      </CollapsibleSection>
 
       {selected && (
         <div

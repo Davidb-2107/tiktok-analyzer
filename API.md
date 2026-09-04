@@ -14,7 +14,7 @@ REST API. No auth required (Cloudflare Access is bypassed for this hostname).
    from the video's duration (denser for short videos, capped for long ones).
    Optionally add `start_s`/`end_s` to analyze only a specific window (see below).
 2. Poll `GET /status/{job_id}` until `status` is `done` or `error`.
-3. Read `transcript`, `segments`, `frames` from the final status payload.
+3. Read `transcript`, `segments`, `frames` and (when available) `scenes` from the final status payload.
 
 State machine: `pending → downloading → extracting → frames_ready → (done | transcribing → done | error)`.
 Transcription is automatic when the source has no captions (local faster-whisper, ~1–3× realtime on CPU).
@@ -41,6 +41,15 @@ Transcription is automatic when the source has no captions (local faster-whisper
   "status":    "pending|downloading|extracting|frames_ready|transcribing|done|error",
   "url":       "source url",
   "frames":    ["https://<r2-presigned-url>.jpg", ...],  // presigned R2 URLs once uploaded
+  "scenes":    [                                           // best-effort technical cuts; [] when disabled/none found
+    {
+      "index": 0,                                           // integer scene index, zero-based
+      "start": 0.0,                                         // number: start time in seconds
+      "end": 2.4,                                           // number: end time in seconds
+      "duration": 2.4,                                      // number: end - start, in seconds
+      "keyframe": "https://<r2-presigned-url>.jpg"         // string URL to midpoint image, or null
+    }
+  ],
   "duration":  88,                                        // seconds
   "transcript":"full text...",
   "segments":  [ { "start": 0, "end": 1.78, "text": "...", "words": [ { "start", "end", "word" } ] } ],
@@ -72,6 +81,19 @@ Transcription is automatic when the source has no captions (local faster-whisper
   "end_s":     null
 }
 ```
+
+`frames` is the regular time-sampled stream used by OCR and remains unchanged.
+`scenes` is an additive, best-effort technical-cut stream produced by PySceneDetect;
+each `keyframe` represents the scene midpoint and is independent of regular frames.
+The backend may return `scenes: []`, or `keyframe: null` for an individual scene.
+Up to 120 scene images are extracted/uploaded; scene intervals remain available
+when a keyframe is unavailable. During processing, local keyframe filenames may
+be served from `/frames/{job_id}/local/{frame_name}`; the final `done` payload
+contains presigned URLs.
+
+Scene detection is controlled by `SCENE_DETECTION_ENABLED` (default `false`),
+`SCENE_DETECT_THRESHOLD` (default `27`), `SCENE_MIN_LEN_FRAMES` (default `15`),
+and `SCENE_MAX_KEYFRAMES` (default `120`).
 
 ## Adaptive frame budget + dedup
 

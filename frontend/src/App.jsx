@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Component } from 'react'
 import UrlInput from './components/UrlInput.jsx'
 import StatusIndicator from './components/StatusIndicator.jsx'
 import FrameGallery from './components/FrameGallery.jsx'
+import SceneTimeline from './components/SceneTimeline.jsx'
 import JobHistory from './components/JobHistory.jsx'
 import Transcript from './components/Transcript.jsx'
 import Toast from './components/Toast.jsx'
@@ -132,6 +133,7 @@ export default function App() {
   const [jobId, setJobId] = useState(null)
   const [jobStatus, setJobStatus] = useState(null)
   const [frames, setFrames] = useState([])
+  const [scenes, setScenes] = useState([])
   const [history, setHistory] = useState([])
   const [toastMessage, setToastMessage] = useState(null)
   const [channelParams, setChannelParams] = useState(null)
@@ -156,6 +158,25 @@ export default function App() {
 
   const applyJobData = (data) => {
     setJobStatus(data)
+    const localSceneStatus = ['frames_ready', 'transcribing'].includes(data.status)
+    const nextScenes = Array.isArray(data.scenes) ? data.scenes.map((scene) => {
+      if (!scene || typeof scene !== 'object') return null
+      const keyframe = scene.keyframe ?? scene.keyframe_url ?? null
+      const localKeyframeValue = scene.local_keyframe || scene.localKeyframe || (
+        typeof keyframe === 'string' && !/^https?:\/\//i.test(keyframe) ? keyframe : null
+      )
+      const localKeyframe = typeof localKeyframeValue === 'string'
+        ? (/^https?:\/\//i.test(localKeyframeValue)
+          ? localKeyframeValue
+          : `${API}/frames/${data.job_id}/local/${encodeURIComponent(localKeyframeValue)}`)
+        : null
+      return {
+        ...scene,
+        keyframe: localSceneStatus && localKeyframe ? localKeyframe : keyframe,
+        keyframeFallback: localKeyframe,
+      }
+    }).filter(Boolean) : []
+    setScenes(nextScenes)
     if (data.frames?.length) {
       const isLocal = data.status === 'frames_ready' || data.status === 'transcribing'
       const urls = isLocal
@@ -172,6 +193,7 @@ export default function App() {
   const handleAnalyze = async (url, fps, project) => {
     stopPolling()
     setFrames([])
+    setScenes([])
     setJobStatus(null)
     setJobId(null)
 
@@ -192,6 +214,7 @@ export default function App() {
   const handleAnalyzeChannel = (url, topN, fps, project) => {
     stopPolling()
     setFrames([])
+    setScenes([])
     setJobStatus(null)
     setJobId(null)
     setChannelParams({ url, topN, fps, project })
@@ -248,6 +271,7 @@ export default function App() {
     setJobId(null)
     setJobStatus(null)
     setFrames([])
+    setScenes([])
     setChannelParams(null)
   }
 
@@ -494,6 +518,9 @@ export default function App() {
         />
       )}
       {!channelParams && frames.length > 0 && <FrameGallery frames={frames} />}
+      {!channelParams && jobStatus?.status === 'done' && scenes.length > 0 && (
+        <SceneTimeline scenes={scenes} segments={jobStatus.segments || []} />
+      )}
       {!channelParams && jobStatus?.transcript && <Transcript text={jobStatus.transcript} />}
       {!channelParams && jobStatus?.hook_overlay_text && (
         <Transcript title="Hook — on-screen text, first seconds (OCR)" text={jobStatus.hook_overlay_text} />
