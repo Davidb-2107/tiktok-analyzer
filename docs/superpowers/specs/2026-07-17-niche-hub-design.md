@@ -39,9 +39,11 @@ Décisions utilisateur :
 
 Greffé sur l'app TikTok Analyzer existante (FastAPI + React). Aucun nouveau service.
 
-- Vault monté **lecture seule** dans le backend, compose dev uniquement :
-  `- ../../:/vault:ro` (le compose vit dans `Wiki_Claude/Projects/TikTok Analyzer`)
-  + `VAULT_DIR=/vault` dans `environment`. Le mount `/sourcing:rw` existant reste.
+- Vault monté **lecture seule** dans le backend, compose dev uniquement : le
+  chemin hôte est injecté par `VAULT_HOST_DIR` et monté vers `/vault` en read-only
+  (valeur par défaut : `C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude`). Le
+  compose vit dans le dépôt indépendant `C:/Users/dbele/src/tiktok-analyzer`.
+  `VAULT_DIR=/vault` reste dans `environment` et le mount `/sourcing:rw` existant reste.
 - Backend : `VAULT_DIR = Path(os.environ.get("VAULT_DIR", "/vault"))` (pattern
   env maison). `VAULT_DIR` absent (prod VPS) → `GET /hub` répond 404. **Pas de
   logique de masquage côté frontend** : le fetch échoue en prod, point.
