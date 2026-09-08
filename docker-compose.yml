@@ -10,12 +10,20 @@ services:
       - ${SCRIPT_INBOX_HOST:-./script_inbox}:/inbox/scripts
       # Local dev only — bridges the Sourcing transcript registry (sibling
       # project) so /jobs/{id}/save-transcript can write into it. Never add
-      # this to docker-compose.prod.yml.
-      - ../Sourcing:/sourcing:rw
+      # this to docker-compose.prod.yml. The host path is explicit so the
+      # repository can live outside the Obsidian vault.
+      - type: bind
+        source: "${SOURCING_HOST_DIR:-C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude/Projects/Sourcing}"
+        target: /sourcing
+        read_only: false
       # Local dev only — vault racine en lecture seule pour le Niche Hub
       # (GET /hub). Jamais dans docker-compose.prod.yml : sans ce mount,
-      # /hub répond 404 (garde VAULT_DIR).
-      - ../../:/vault:ro
+      # /hub répond 404 (garde VAULT_DIR). The host path is explicit because
+      # the repository is maintained outside the Obsidian vault.
+      - type: bind
+        source: "${VAULT_HOST_DIR:-C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude}"
+        target: /vault
+        read_only: true
     env_file:
       - .env
     environment:
