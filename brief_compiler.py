@@ -60,19 +60,6 @@ def parse_frontmatter(text):
     return meta, text[end + 4 :]
 
 
-def _card_fields(body):
-    """{"card": <texte borné>, "card_error": None|"duplicate FORMAT CARD sections"}.
-
-    Réutilise fcr._find_card_section (même logique bornée que Task 1, pas de
-    duplication) : 0 header -> card vide ; 1 header -> texte du span borné ;
-    >1 headers -> ambigu, card vide + card_error explicite (jamais résolu ici).
-    """
-    headers, span = fcr._find_card_section(body)
-    if len(headers) > 1:
-        return {"card": "", "card_error": "duplicate FORMAT CARD sections"}
-    return {"card": body[span[0] : span[1]] if span else "", "card_error": None}
-
-
 def load_registry(niche):
     """Toutes les vidéos du registre de la niche (frontmatter + transcript)."""
     d = TRANSCRIPTS / niche
@@ -91,13 +78,14 @@ def load_registry(niche):
                 "title": meta.get("title", ""),
                 "views": meta.get("views", 0),
                 "transcript": (m.group(1).strip() if m else ""),
-                # card taxonomique archivée par extract-format (step 5) : extraction
-                # bornée via fcr._find_card_section (Task 1 SOT) — l'ancienne regex
-                # `r"^## FORMAT CARD.*"` capturait jusqu'à EOF sans s'arrêter au
-                # prochain "## ", exactement le bug corrigé côté module partagé.
-                # card_error distingue "absente" (card == "") de "dupliquée"
-                # (plusieurs sections '## FORMAT CARD' -> ambigu, jamais résolu ici).
-                **_card_fields(body),
+                # card taxonomique archivée par extract-format (step 5) : on a déjà
+                # le chemin du fichier ici -> fcr.inspect_file(f) (surface publique
+                # du module partagé, Task 1 ; lit et borne elle-même l'extraction,
+                # jamais jusqu'à EOF) plutôt qu'une regex bornée en double sur `body`
+                # déjà lu, ou le finder privé fcr._find_card_section. Rend déjà
+                # n_sections/valid/errors/card (fields) -> inspect_cards() n'a plus
+                # besoin de reparser le texte via fcr.parse_card en double.
+                "card_inspect": fcr.inspect_file(f),
                 "ref": f"Projects/Sourcing/transcripts/{niche}/{f.name}",
             }
         )
@@ -157,13 +145,39 @@ def _bullets(block):
 # valide déjà les 3 champs contre elle.
 
 
+def _inspect_one(v):
+    """fcr.inspect_file()-shaped dict ({"n_sections","valid","errors","card"})
+    pour une vidéo. Préfère "card_inspect", déjà calculé par load_registry via
+    la surface publique fcr.inspect_file(f) (pas de deuxième parse). Fallback
+    pour la forme de test synthétique {"card": <texte>} : parse à la demande
+    via fcr.parse_card, seule voie encore publique sur du texte déjà en main."""
+    inspected = v.get("card_inspect")
+    if inspected is not None:
+        return inspected
+    text = v.get("card", "")
+    if not text:
+        return {
+            "n_sections": 0,
+            "valid": False,
+            "errors": ["no FORMAT CARD section found"],
+            "card": None,
+        }
+    card = fcr.parse_card(text)
+    return {
+        "n_sections": 1,
+        "valid": card["valid"],
+        "errors": card["errors"],
+        "card": card,
+    }
+
+
 def inspect_cards(videos):
     """Card coverage + validity report pour une niche.
 
-    Chaque vidéo (issue de `load_registry`) porte déjà "card" (texte borné,
-    "" si absente/dupliquée) et "card_error" (None sauf section dupliquée).
-    N'appelle fcr.parse_card qu'une fois par vidéo présente — pas de deuxième
-    validation en double.
+    Chaque vidéo (issue de `load_registry`) porte déjà "card_inspect" (le
+    dict retourné par fcr.inspect_file()). N'appelle fcr.parse_card qu'une
+    fois par vidéo présente (via load_registry) — pas de deuxième validation
+    en double.
 
     Retourne :
       n_videos       — nb total de vidéos du registre
@@ -184,20 +198,18 @@ def inspect_cards(videos):
     valid_fields = []
     for v in videos:
         vid = v.get("video_id", v.get("ref", "?"))
-        if v.get("card_error"):
-            errors.append({"video_id": vid, "error": v["card_error"]})
-            n_present += 1
-            continue
-        card = v.get("card")
-        if not card:
+        inspected = _inspect_one(v)
+        if inspected["n_sections"] == 0:
             errors.append({"video_id": vid, "error": "missing FORMAT CARD"})
             continue
         n_present += 1
-        parsed = fcr.parse_card(card)
-        if not parsed["valid"]:
-            errors.append({"video_id": vid, "error": "; ".join(parsed["errors"])})
+        if inspected["n_sections"] > 1:
+            errors.append({"video_id": vid, "error": "duplicate FORMAT CARD sections"})
             continue
-        valid_fields.append(parsed["fields"])
+        if not inspected["valid"]:
+            errors.append({"video_id": vid, "error": "; ".join(inspected["errors"])})
+            continue
+        valid_fields.append(inspected["card"]["fields"])
 
     n_valid = len(valid_fields)
     majority, majority_share = {}, {}
@@ -414,6 +426,15 @@ def build_shots(beats, shot_s):
 
 # --- compilation --------------------------------------------------------------
 def compile_brief(niche, voice=None, language="fr", strict=False):
+    """Compile un brief exécutable ; lève ValueError en --strict (cf. plus bas)."""
+    brief, _card_report = _compile_brief_full(niche, voice, language, strict)
+    return brief
+
+
+def _compile_brief_full(niche, voice=None, language="fr", strict=False):
+    """Comme compile_brief, mais retourne aussi le card_report déjà calculé en
+    interne — évite à main() de relire le registre + rappeler inspect_cards()
+    juste pour le rapport de couverture passé à readiness()."""
     target_s, shot_s = sc.load_sot()
     videos = load_registry(niche)
     formula_path, formula_text = find_formula(videos)
@@ -558,7 +579,7 @@ def compile_brief(niche, voice=None, language="fr", strict=False):
     # ASSERT avant écriture : le brief valide contre le contrat existant.
     sc.validate_structure(brief)
     sc.validate_against_sot(brief, target_s, shot_s)
-    return brief
+    return brief, card_report
 
 
 def readiness(brief, format_report=None):
@@ -602,7 +623,7 @@ def main():
     args = ap.parse_args()
 
     try:
-        brief = compile_brief(
+        brief, card_report = _compile_brief_full(
             args.niche, voice=args.voice, language=args.language, strict=args.strict
         )
     except ValueError as e:
@@ -616,7 +637,6 @@ def main():
         f"  beats: {len(brief['script']['beats'])}  shots: {len(brief['shots'])}  "
         f"wpm: {brief['script']['target_wpm']}  voice: {brief['script']['voice_id']}"
     )
-    card_report = inspect_cards(load_registry(args.niche))
     warn = readiness(brief, card_report)
     if warn:
         print("  ⚠ niche pas encore prête:")
