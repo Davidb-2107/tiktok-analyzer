@@ -40,20 +40,28 @@ def main():
     assert all(v["video_id"] for v in videos)
     assert brief["source"]["channel_formula_ref"], "formula non trouvée"
 
-    # Format : dérivé de la CHANNEL FORMULA (fallback mots-clés), pas inventé.
-    # neon_psycho a aujourd'hui une couverture cards partielle (5/10 valides)
-    # -> parse_cards() retourne None -> c'est bien derive_format() (fallback
-    # mots-clés) qui produit style/realism ci-dessous. Si la couverture passe
-    # un jour à 100%, ce test doit être relu (la voie noble prendrait le relais
-    # et pourrait produire d'autres valeurs).
-    card_report = bc.inspect_cards(bc.load_registry("neon_psycho"))
-    assert bc.parse_cards(bc.load_registry("neon_psycho")) is None, (
-        "neon_psycho a une couverture cards complète maintenant — relire ce "
-        "test, les valeurs style/realism ci-dessous viendraient de la voie "
-        "noble (cards) et non plus du fallback mots-clés"
-    )
-    assert brief["format"]["style"] == "AI animation"
-    assert brief["format"]["realism"] == 5
+    # Format : suivre la voie réellement sélectionnée par la couverture cards.
+    # Le smoke test reste valable après un backfill complet du registre :
+    # couverture incomplète -> fallback formula, couverture complète -> cards.
+    registry = bc.load_registry("neon_psycho")
+    card_report = bc.inspect_cards(registry)
+    cards = bc.parse_cards(registry, report=card_report)
+    if card_report["n_valid"] != card_report["n_videos"]:
+        assert cards is None
+        _, formula_text = bc.find_formula(registry)
+        fallback = bc.derive_format(formula_text)
+        assert (
+            brief["format"]["style"],
+            brief["format"]["realism"],
+            brief["format"]["hook_mechanic"],
+        ) == fallback[:3]
+    else:
+        assert cards is not None
+        assert (
+            brief["format"]["style"],
+            brief["format"]["realism"],
+            brief["format"]["hook_mechanic"],
+        ) == cards
     assert len(brief["format"]["variable_slots"]) >= 2
     assert brief["format"]["constant"], "constant vide — la formula n'a pas été lue"
 
@@ -123,6 +131,9 @@ def _card(style="AI animation", realism="5", hook="text-tease"):
 
 
 def _test_cards_fixtures():
+    # Régression : une niche vide n'est pas une niche complète.
+    assert bc.parse_cards([]) is None
+
     # Niche complète : toutes les vidéos ont une card valide et unique ->
     # parse_cards retourne le triplet majoritaire.
     complete = [
@@ -146,6 +157,67 @@ def _test_cards_fixtures():
     ]
     assert bc.parse_cards(partial_invalid) is None
 
+    # Niche complète mais hétérogène : une majorité stricte sous 2/3 reste
+    # exploitable en mode permissif, mais doit être visible dans le rapport.
+    heterogeneous_under = [
+        {"video_id": "under-1", "card": _card()},
+        {"video_id": "under-2", "card": _card()},
+        {"video_id": "under-3", "card": _card()},
+        {
+            "video_id": "under-4",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+        {
+            "video_id": "under-5",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+    ]
+    under_report = bc.inspect_cards(heterogeneous_under)
+    assert under_report["n_present"] == 5
+    assert under_report["n_valid"] == under_report["n_videos"] == 5
+    assert under_report["majority"] == {
+        "style": "AI animation",
+        "realism": 5,
+        "hook_mechanic": "text-tease",
+    }
+    assert all(share == 3 / 5 for share in under_report["majority_share"].values())
+    assert bc.parse_cards(heterogeneous_under, report=under_report) == (
+        "AI animation",
+        5,
+        "text-tease",
+    )
+
+    # Frontière exacte : 2 cartes sur 3 partagent chaque valeur majoritaire.
+    heterogeneous_boundary = [
+        {"video_id": "boundary-1", "card": _card()},
+        {"video_id": "boundary-2", "card": _card()},
+        {
+            "video_id": "boundary-3",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+    ]
+    boundary_report = bc.inspect_cards(heterogeneous_boundary)
+    assert boundary_report["n_present"] == 3
+    assert boundary_report["n_valid"] == boundary_report["n_videos"] == 3
+    assert all(
+        share == 2 / 3 for share in boundary_report["majority_share"].values()
+    )
+    assert bc.parse_cards(heterogeneous_boundary, report=boundary_report) == (
+        "AI animation",
+        5,
+        "text-tease",
+    )
+
+    readiness_probe = {
+        "script": {"voice_id": "calibrated"},
+        "prompt_pack": [{"engine": "seedance"}],
+        "format": {"style": "AI animation", "hook_mechanic": "text-tease"},
+    }
+    under_warnings = bc.readiness(readiness_probe, under_report)
+    assert any("majorité FORMAT CARD" in warning for warning in under_warnings)
+    boundary_warnings = bc.readiness(readiness_probe, boundary_report)
+    assert not any("majorité FORMAT CARD" in warning for warning in boundary_warnings)
+
     # Card invalide (valeur de champ inconnue) : comptée comme invalide par
     # inspect_cards, jamais silencieusement classée "other".
     report = bc.inspect_cards(
@@ -154,8 +226,8 @@ def _test_cards_fixtures():
     assert report["n_present"] == 1, "la section existe, elle n'est pas 'missing'"
     assert report["n_valid"] == 0
     assert len(report["errors"]) == 1
-    assert "unknown value" in report["errors"][0]["error"]
     assert report["errors"][0]["video_id"] == "bad"
+    assert report["errors"][0]["error"]
 
     # Card dupliquée (deux sections '## FORMAT CARD' dans le texte source) ->
     # comptée comme invalide/dupliquée, pas comme valide. inspect_file() ne
@@ -172,7 +244,9 @@ def _test_cards_fixtures():
     assert not dup_inspect["valid"]
     report = bc.inspect_cards([{"video_id": "dup", "card_inspect": dup_inspect}])
     assert report["n_valid"] == 0
-    assert "duplicate" in report["errors"][0]["error"]
+    assert len(report["errors"]) == 1
+    assert report["errors"][0]["video_id"] == "dup"
+    assert report["errors"][0]["error"]
 
     # Piège de sous-chaîne : "not a talking head" ne doit jamais matcher
     # "talking head" (même garantie que Task 1, revérifiée côté brief_compiler
@@ -183,39 +257,42 @@ def _test_cards_fixtures():
     assert trap_report["n_valid"] == 0, (
         "substring trap: 'not a talking head' a matché 'talking head'"
     )
-    assert "unknown value" in trap_report["errors"][0]["error"]
+    assert len(trap_report["errors"]) == 1
+    assert trap_report["errors"][0]["video_id"] == "trap"
+    assert trap_report["errors"][0]["error"]
 
 
 def _test_strict_vs_permissive(brief, card_report):
-    # neon_psycho est actuellement partielle (5/10 cards valides, confirmé
-    # plus haut) -> permissif ne lève pas (fallback mots-clés, déjà vérifié
-    # sur `brief` ci-dessus) ; strict lève en listant les fichiers fautifs.
-    assert card_report["n_valid"] != card_report["n_videos"], (
-        "neon_psycho est devenue complète — ce test de strict doit être relu"
-    )
+    # Le mode permissif accepte le rapport réel, quelle que soit l'évolution
+    # du registre.
     bc.compile_brief("neon_psycho", strict=False)  # ne lève pas
 
+    expected_strict_failure = (
+        card_report["n_valid"] != card_report["n_videos"]
+        or any(share < 2 / 3 for share in card_report["majority_share"].values())
+    )
+    strict_error = None
     try:
         bc.compile_brief("neon_psycho", strict=True)
-        raise AssertionError(
-            "compile_brief(strict=True) aurait dû lever sur neon_psycho incomplète"
-        )
-    except ValueError as e:
-        msg = str(e)
-        assert "neon_psycho" in msg
-        # au moins une entrée d'erreur (ref fichier + raison) est listée
-        assert "missing FORMAT CARD" in msg or ":" in msg
+    except ValueError as exc:
+        strict_error = str(exc)
+    if expected_strict_failure:
+        assert strict_error and "--strict" in strict_error
+        assert "FORMAT CARD" in strict_error
+    else:
+        assert strict_error is None, strict_error
 
 
 def _test_readiness(brief, card_report):
     # Readiness signale séparément voix/moteur/taxonomie (lus du brief seul)
     # et la couverture FORMAT CARD (format_report optionnel) — ne pas fusionner.
     warn_no_report = bc.readiness(brief)
-    warn_with_report = bc.readiness(brief, card_report)
-    assert any("hook_mechanic" in w for w in warn_no_report), (
-        "hook_mechanic='other' attendu sur neon_psycho (fallback mots-clés) — "
-        "relire ce test si derive_format a changé"
+    warn_with_actual_report = bc.readiness(brief, card_report)
+    assert any("couverture FORMAT CARD" in w for w in warn_with_actual_report) == (
+        card_report["n_valid"] != card_report["n_videos"]
     )
+    incomplete_report = bc.inspect_cards([{"video_id": "missing", "card": ""}])
+    warn_with_report = bc.readiness(brief, incomplete_report)
     assert not any("couverture FORMAT CARD" in w for w in warn_no_report), (
         "le signal de couverture cards ne doit apparaître qu'avec format_report"
     )

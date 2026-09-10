@@ -37,8 +37,24 @@ VOICE_CAL = sc.VAULT / "Shared" / "voice-calibration"
 
 # taxonomie STYLES/MECHANICS/REALISM_VALUES + parse_card/inspect_file : SOT
 # partagée (Task 1) — pas de copie locale, pas de deuxième regex bornée.
-sys.path.insert(0, str(sc.VAULT / "Projects" / "Sourcing" / "tools"))
-import format_card_registry as fcr
+FCR_TOOLS = sc.VAULT / "Projects" / "Sourcing" / "tools"
+FCR_MODULE = FCR_TOOLS / "format_card_registry.py"
+if not FCR_MODULE.is_file():
+    raise ModuleNotFoundError(
+        "Validateur FORMAT CARD introuvable : module attendu ici "
+        f"{FCR_MODULE} (vault configuré : {sc.VAULT}). "
+        "La validation des cards ne peut pas continuer ; vérifiez que le module "
+        "du vault Projects/Sourcing/tools est présent."
+    )
+sys.path.insert(0, str(FCR_TOOLS))
+try:
+    import format_card_registry as fcr
+except ImportError as exc:
+    raise ImportError(
+        "Impossible d'importer le validateur FORMAT CARD du vault. "
+        f"Chemin attendu : {FCR_MODULE} ; contexte : brief_compiler.py "
+        "en dépend pour inspecter et valider les cards, sans fallback silencieux."
+    ) from exc
 
 
 # --- parsing registre ---------------------------------------------------------
@@ -234,13 +250,19 @@ def inspect_cards(videos):
     }
 
 
-def parse_cards(videos):
+def parse_cards(videos, report=None):
     """Taxonomie depuis les FORMAT CARDs archivées (labels fixes, vote majoritaire
     parmi les cards valides). Retourne (style, realism, hook_mechanic) SEULEMENT
     si la niche est complète (chaque vidéo a une card présente/valide/unique) ;
     sinon None — une card partielle n'active plus jamais la voie noble, le
-    fallback mots-clés prend le relais dans compile_brief."""
-    report = inspect_cards(videos)
+    fallback mots-clés prend le relais dans compile_brief.
+
+    `report` est le rapport produit par inspect_cards(videos), s'il est déjà
+    disponible ; son omission conserve l'API parse_cards(videos)."""
+    if not videos:
+        return None
+    if report is None:
+        report = inspect_cards(videos)
     if report["n_valid"] != report["n_videos"]:
         return None
     m = report["majority"]
@@ -449,7 +471,7 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False):
     # SEULEMENT quand la couverture est complète (règle du plan) — une card
     # partielle/invalide/dupliquée n'active jamais la voie noble.
     card_report = inspect_cards(videos)
-    from_cards = parse_cards(videos)
+    from_cards = parse_cards(videos, report=card_report)
     if from_cards:
         style, realism, hook_mechanic = from_cards
     else:
@@ -600,12 +622,25 @@ def readiness(brief, format_report=None):
         warn.append("style='other' : pas de FORMAT CARD exploitable -> extract-format")
     if brief["format"]["hook_mechanic"] == "other":
         warn.append("hook_mechanic='other' : mécanique de hook non résolue")
-    if format_report and format_report["n_valid"] != format_report["n_videos"]:
-        warn.append(
-            f"couverture FORMAT CARD incomplète: {format_report['n_valid']}/"
-            f"{format_report['n_videos']} cards valides -> extract-format sur "
-            "les vidéos manquantes/invalides"
-        )
+    if format_report:
+        if format_report["n_valid"] != format_report["n_videos"]:
+            warn.append(
+                f"couverture FORMAT CARD incomplète: {format_report['n_valid']}/"
+                f"{format_report['n_videos']} cards valides -> extract-format sur "
+                "les vidéos manquantes/invalides"
+            )
+        elif format_report["n_valid"] > 0:
+            low = [
+                field
+                for field, share in format_report["majority_share"].items()
+                if share < 2 / 3
+            ]
+            if low:
+                warn.append(
+                    "majorité FORMAT CARD sous le seuil 2/3 pour: "
+                    f"{', '.join(low)} -> format hétérogène, envisager un "
+                    "cluster/formula séparé"
+                )
     return warn
 
 
