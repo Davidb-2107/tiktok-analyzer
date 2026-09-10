@@ -115,11 +115,19 @@ contenu. Proposition étroite mais plus défendable que toute la catégorie B.
 
 ## 6. Dette & prochaines étapes
 
-- **Dette amont** : le registre `transcripts/neon_psycho/` ne stocke que les
-  transcripts, pas les format cards brutes → le compilateur infère
-  style/realism/hook_mechanic par mots-clés (`ponytail:` dans le code). **Fix** :
-  faire archiver les cards brutes par extract-format (labels `**Video style:**`…),
-  puis parser au lieu d'inférer. Sinon la qualité du brief plafonne.
+- **Dette amont — tooling livré, backfill en attente** : le contrat de validation
+  des FORMAT CARDs (`Projects/Sourcing/tools/format_card_registry.py` dans le
+  vault) et le compilateur conscient de la couverture
+  (`inspect_cards`/`parse_cards`/`compile_brief(..., strict=True)` dans
+  `brief_compiler.py`) sont livrés et testés. Mais la dette taxonomique n'est
+  **pas résolue** : `neon_psycho` n'a que 5/10 vidéos avec une card valide,
+  `dark_psycho` 0/8 — le compilateur tourne donc encore en fallback mots-clés
+  sur les deux niches, et `--strict` échoue sur les deux tant que le backfill
+  n'a pas couvert les 13 vidéos restantes (worklist réelle :
+  `python Projects/Sourcing/tools/backfill_cards.py --niche <niche> --check`).
+  **Prochaine étape** : lancer les batchs manuels `/extract-format` sur ces 13
+  vidéos (aucune automatisation LLM implicite dans le worklist par design),
+  puis re-régénérer les briefs en mode strict.
 - **Questions ouvertes non résolues** : (1) Viral Finder/ViralDecode font-ils déjà
   de la prosodie sous le capot sans l'annoncer ? Si oui, le dernier moat tombe.
   (2) Voie d'accès *autorisée* aux données (Research API, contenu uploadé par

@@ -12,6 +12,7 @@ diverge du SOT — c'est ce qui est asserté ici.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -19,7 +20,9 @@ HERE = Path(__file__).resolve().parent
 SCHEMA = HERE / "brief.schema.json"
 
 # --- localiser + importer le SOT de spec (source unique de vérité) -----------
-VAULT = Path(r"C:\Users\dbele\Documents\ObsidianVault\Wiki_Claude")
+VAULT = Path(
+    os.environ.get("VAULT_DIR", r"C:\Users\dbele\Documents\ObsidianVault\Wiki_Claude")
+).expanduser()
 SOT_DIR = VAULT / "Shared" / "tiktok-spec"
 
 
