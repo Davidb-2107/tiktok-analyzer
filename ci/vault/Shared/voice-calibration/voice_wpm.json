@@ -1,0 +1,8 @@
+{
+  "neon_psycho": {
+    "voice_id": "ci_voice_v1",
+    "observed_runs": ["ci"],
+    "fr": {"wpm": 180.0, "label": "synthetic CI calibration"}
+  },
+  "_default": 180.0
+}
