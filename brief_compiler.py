@@ -35,6 +35,11 @@ FRAMES = sc.VAULT / "Projects" / "Sourcing" / "frames"
 ENGINE_FACTS = sc.VAULT / "Shared" / "ENGINE-FACTS.md"
 VOICE_CAL = sc.VAULT / "Shared" / "voice-calibration"
 
+# taxonomie STYLES/MECHANICS/REALISM_VALUES + parse_card/inspect_file : SOT
+# partagée (Task 1) — pas de copie locale, pas de deuxième regex bornée.
+sys.path.insert(0, str(sc.VAULT / "Projects" / "Sourcing" / "tools"))
+import format_card_registry as fcr
+
 
 # --- parsing registre ---------------------------------------------------------
 def parse_frontmatter(text):
@@ -55,6 +60,19 @@ def parse_frontmatter(text):
     return meta, text[end + 4 :]
 
 
+def _card_fields(body):
+    """{"card": <texte borné>, "card_error": None|"duplicate FORMAT CARD sections"}.
+
+    Réutilise fcr._find_card_section (même logique bornée que Task 1, pas de
+    duplication) : 0 header -> card vide ; 1 header -> texte du span borné ;
+    >1 headers -> ambigu, card vide + card_error explicite (jamais résolu ici).
+    """
+    headers, span = fcr._find_card_section(body)
+    if len(headers) > 1:
+        return {"card": "", "card_error": "duplicate FORMAT CARD sections"}
+    return {"card": body[span[0] : span[1]] if span else "", "card_error": None}
+
+
 def load_registry(niche):
     """Toutes les vidéos du registre de la niche (frontmatter + transcript)."""
     d = TRANSCRIPTS / niche
@@ -64,7 +82,7 @@ def load_registry(niche):
         meta, body = parse_frontmatter(f.read_text(encoding="utf-8"))
         if "video_url" not in meta:  # fichier non-registre (AGENTS.md, notes...)
             continue
-        m = re.search(r"## Transcript.*?\n\n(.+?)(?:\n\n## |\Z)", body, re.S)
+        m = re.search(r"## Transcript.*?\n\n(.+?)(?:\n\n## |\Z)", body, re.DOTALL)
         videos.append(
             {
                 "video_id": f.stem,
@@ -73,8 +91,13 @@ def load_registry(niche):
                 "title": meta.get("title", ""),
                 "views": meta.get("views", 0),
                 "transcript": (m.group(1).strip() if m else ""),
-                # card taxonomique archivée par extract-format (step 5), si présente
-                "card": (c.group(0) if (c := re.search(r"^## FORMAT CARD.*", body, re.S | re.M)) else ""),
+                # card taxonomique archivée par extract-format (step 5) : extraction
+                # bornée via fcr._find_card_section (Task 1 SOT) — l'ancienne regex
+                # `r"^## FORMAT CARD.*"` capturait jusqu'à EOF sans s'arrêter au
+                # prochain "## ", exactement le bug corrigé côté module partagé.
+                # card_error distingue "absente" (card == "") de "dupliquée"
+                # (plusieurs sections '## FORMAT CARD' -> ambigu, jamais résolu ici).
+                **_card_fields(body),
                 "ref": f"Projects/Sourcing/transcripts/{niche}/{f.name}",
             }
         )
@@ -98,12 +121,20 @@ def _slug(s):
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     s = re.split(r"[:(—-]| - ", s, 1)[0]  # coupe à ':', '(', tiret long
     words = re.findall(r"[a-z0-9]+", s.lower())
-    return "_".join(w for w in words if w not in ("l", "le", "la", "les", "d", "de", "du", "un", "une"))[:40]
+    return "_".join(
+        w
+        for w in words
+        if w not in ("l", "le", "la", "les", "d", "de", "du", "un", "une")
+    )[:40]
 
 
 def _section(text, title):
     """Contenu d'une section '## <title>...' jusqu'au prochain '## '."""
-    m = re.search(rf"^## {title}.*?\n(.*?)(?=^## |\Z)", text, re.S | re.M | re.I)
+    m = re.search(
+        rf"^## {title}.*?\n(.*?)(?=^## |\Z)",
+        text,
+        re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
     return m.group(1).strip() if m else ""
 
 
@@ -121,51 +152,87 @@ def _bullets(block):
     return items
 
 
-# Taxonomie fixe d'extract-format (SKILL.md "do not add/remove/rename fields").
-STYLES = [
-    "talking head",
-    "POV skit",
-    "AI animation",
-    "screen recording",
-    "b-roll + voiceover",
-    "slideshow/photo",
-    "vlog",
-    "tutorial/demo",
-    "reaction",
-]
-MECHANICS = [
-    "shock/pattern-interrupt",
-    "bold claim",
-    "mid-action start",
-    "curiosity gap",
-    "direct address",
-    "text-tease",
-    "question",
-]
+# Taxonomie fixe d'extract-format (STYLES/MECHANICS/REALISM_VALUES) : plus de
+# copie locale ici, elle vit dans fcr (module partagé, Task 1) et fcr.parse_card
+# valide déjà les 3 champs contre elle.
+
+
+def inspect_cards(videos):
+    """Card coverage + validity report pour une niche.
+
+    Chaque vidéo (issue de `load_registry`) porte déjà "card" (texte borné,
+    "" si absente/dupliquée) et "card_error" (None sauf section dupliquée).
+    N'appelle fcr.parse_card qu'une fois par vidéo présente — pas de deuxième
+    validation en double.
+
+    Retourne :
+      n_videos       — nb total de vidéos du registre
+      n_present      — nb de vidéos avec au moins une section FORMAT CARD
+                        (dupliquée ou non, valide ou non)
+      n_valid        — nb de vidéos avec une card présente, UNIQUE et valide
+                        (les 3 champs résolus)
+      errors         — [{"video_id":.., "error":..}] pour absente/dupliquée/invalide
+      majority       — {"style":.., "realism":.., "hook_mechanic":..} = valeur la
+                        plus fréquente par champ parmi les cards valides (None si
+                        aucune card valide)
+      majority_share — mêmes clés, fraction des cards valides qui partagent cette
+                        valeur majoritaire (seuil 2/3 utilisé par --strict)
+    """
+    n_videos = len(videos)
+    n_present = 0
+    errors = []
+    valid_fields = []
+    for v in videos:
+        vid = v.get("video_id", v.get("ref", "?"))
+        if v.get("card_error"):
+            errors.append({"video_id": vid, "error": v["card_error"]})
+            n_present += 1
+            continue
+        card = v.get("card")
+        if not card:
+            errors.append({"video_id": vid, "error": "missing FORMAT CARD"})
+            continue
+        n_present += 1
+        parsed = fcr.parse_card(card)
+        if not parsed["valid"]:
+            errors.append({"video_id": vid, "error": "; ".join(parsed["errors"])})
+            continue
+        valid_fields.append(parsed["fields"])
+
+    n_valid = len(valid_fields)
+    majority, majority_share = {}, {}
+    for out_key, fcr_key in (
+        ("style", "video_style"),
+        ("realism", "realism"),
+        ("hook_mechanic", "hook_mechanic"),
+    ):
+        if not valid_fields:
+            majority[out_key], majority_share[out_key] = None, 0.0
+            continue
+        value, count = Counter(f[fcr_key] for f in valid_fields).most_common(1)[0]
+        majority[out_key], majority_share[out_key] = value, count / n_valid
+
+    return {
+        "n_videos": n_videos,
+        "n_present": n_present,
+        "n_valid": n_valid,
+        "errors": errors,
+        "majority": majority,
+        "majority_share": majority_share,
+    }
 
 
 def parse_cards(videos):
     """Taxonomie depuis les FORMAT CARDs archivées (labels fixes, vote majoritaire
-    across vidéos). Retourne (style, realism, hook_mechanic) ou None si aucune
-    card archivée — le fallback mots-clés prend alors le relais."""
-    votes = []
-    for v in videos:
-        card = v.get("card")
-        if not card:
-            continue
-
-        def field(label):
-            m = re.search(rf"\*\*{label}:\*\*\s*(.+)", card)
-            return m.group(1).strip() if m else ""
-
-        style = next((s for s in STYLES if s.lower() in field("Video style").lower()), "other")
-        mech = next((h for h in MECHANICS if h.lower() in field("Hook mechanic").lower()), "other")
-        m = re.search(r"[1-5]", field("Realism"))
-        votes.append((style, int(m.group()) if m else 3, mech))
-    if not votes:
+    parmi les cards valides). Retourne (style, realism, hook_mechanic) SEULEMENT
+    si la niche est complète (chaque vidéo a une card présente/valide/unique) ;
+    sinon None — une card partielle n'active plus jamais la voie noble, le
+    fallback mots-clés prend le relais dans compile_brief."""
+    report = inspect_cards(videos)
+    if report["n_valid"] != report["n_videos"]:
         return None
-    majority = lambda i: Counter(v[i] for v in votes).most_common(1)[0][0]
-    return majority(0), majority(1), majority(2)
+    m = report["majority"]
+    return m["style"], m["realism"], m["hook_mechanic"]
 
 
 # ponytail: fallback mots-clés quand aucune card archivée (anciennes niches dont
@@ -187,12 +254,12 @@ HOOK_KEYWORDS = [
 def derive_format(formula_text):
     style, realism = "other", 3
     for pat, s, r in STYLE_KEYWORDS:
-        if re.search(pat, formula_text, re.I):
+        if re.search(pat, formula_text, re.IGNORECASE):
             style, realism = s, r
             break
     hook_mechanic = "other"
     for pat, h in HOOK_KEYWORDS:
-        if re.search(pat, formula_text, re.I):
+        if re.search(pat, formula_text, re.IGNORECASE):
             hook_mechanic = h
             break
 
@@ -206,7 +273,7 @@ def derive_format(formula_text):
     slots = [s for s in slots if s] or ["topic"]
 
     hook_block = _section(formula_text, r"Hook template")
-    m = re.search(r"```\n(.*?)```", hook_block, re.S)
+    m = re.search(r"```\n(.*?)```", hook_block, re.DOTALL)
     hook_template = " ".join((m.group(1) if m else hook_block).split()) or "TODO"
 
     repro = _bullets(_section(formula_text, r"Repro checklist"))
@@ -232,7 +299,10 @@ def load_voice(niche, alias, language):
     if not alias:
         key = re.sub(r"[^a-z0-9]", "", niche.lower())
         cands = [
-            k for k in data if not k.startswith("_") and re.sub(r"[^a-z0-9]", "", k.lower()).startswith(key)
+            k
+            for k in data
+            if not k.startswith("_")
+            and re.sub(r"[^a-z0-9]", "", k.lower()).startswith(key)
         ]
         if not cands:
             return (
@@ -241,7 +311,9 @@ def load_voice(niche, alias, language):
                 f"TODO: aucun profil voix pour la niche '{niche}' — lancer calibrate-voice (valeur _default non calibrée)",
             )
         # ponytail: défaut = alias le plus utilisé en prod (runs), tiebreak nom court
-        alias = max(cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k)))
+        alias = max(
+            cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k))
+        )
 
     wpm, label = voice_wpm.get_wpm(alias, language=language, postproc="cut")
     profile = voice_wpm.get_profile(alias, language=language) or {}
@@ -256,10 +328,14 @@ def engine_provenance(niche):
     le brief sort alors avec des entrées TODO(engine-facts)."""
     text = ENGINE_FACTS.read_text(encoding="utf-8")
     lines = [ln.strip("- ").strip() for ln in text.splitlines()]
-    default = next((ln for ln in lines if re.search(rf"défaut {niche}", ln, re.I)), None)
+    default = next(
+        (ln for ln in lines if re.search(rf"défaut {niche}", ln, re.IGNORECASE)), None
+    )
     if not default:
         return None
-    hero = next((ln for ln in lines if re.search(r"hero shots", ln, re.I)), default)
+    hero = next(
+        (ln for ln in lines if re.search(r"hero shots", ln, re.IGNORECASE)), default
+    )
     fmt = lambda ln: f"ENGINE-FACTS (Shared/ENGINE-FACTS.md): {ln[:160]}"
     return fmt(default), fmt(hero)
 
@@ -337,17 +413,50 @@ def build_shots(beats, shot_s):
 
 
 # --- compilation --------------------------------------------------------------
-def compile_brief(niche, voice=None, language="fr"):
+def compile_brief(niche, voice=None, language="fr", strict=False):
     target_s, shot_s = sc.load_sot()
     videos = load_registry(niche)
     formula_path, formula_text = find_formula(videos)
-    assert formula_text, f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
+    assert formula_text, (
+        f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
+    )
 
-    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(formula_text)
-    # les cards taxonomiques archivées priment sur l'inférence mots-clés
+    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(
+        formula_text
+    )
+    # les cards taxonomiques archivées priment sur l'inférence mots-clés, mais
+    # SEULEMENT quand la couverture est complète (règle du plan) — une card
+    # partielle/invalide/dupliquée n'active jamais la voie noble.
+    card_report = inspect_cards(videos)
     from_cards = parse_cards(videos)
     if from_cards:
         style, realism, hook_mechanic = from_cards
+    else:
+        print(
+            f"[{niche}] {card_report['n_valid']}/{card_report['n_videos']} "
+            "cards — fallback keywords"
+        )
+
+    if strict:
+        ref_by_id = {v["video_id"]: v["ref"] for v in videos}
+        problems = [
+            f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
+            for e in card_report["errors"]
+        ]
+        if card_report["n_valid"] > 0:
+            low = [
+                field
+                for field, share in card_report["majority_share"].items()
+                if share < 2 / 3
+            ]
+            if low:
+                problems.append(f"majorité < 2/3 pour: {', '.join(low)}")
+        if problems:
+            raise ValueError(
+                f"[{niche}] --strict : couverture/validité/majorité des FORMAT "
+                "CARDs insuffisante:\n  " + "\n  ".join(problems)
+            )
+
     frames_dir = FRAMES / niche
     if frames_dir.is_dir():
         constant["frames_ref"] = f"Projects/Sourcing/frames/{niche}/"
@@ -388,16 +497,31 @@ def compile_brief(niche, voice=None, language="fr"):
             "moteurs (gate pilote) puis consigner le verdict avant production"
         )
         prompt_pack = [
-            {"id": "p_hero", "engine": "TODO(engine-facts)", "prompt": hero_prompt, "provenance": todo},
-            {"id": "p_body", "engine": "TODO(engine-facts)", "prompt": body_prompt, "provenance": todo},
+            {
+                "id": "p_hero",
+                "engine": "TODO(engine-facts)",
+                "prompt": hero_prompt,
+                "provenance": todo,
+            },
+            {
+                "id": "p_body",
+                "engine": "TODO(engine-facts)",
+                "prompt": body_prompt,
+                "provenance": todo,
+            },
         ]
     brief = {
         "schema_version": "0.1",
         "niche": niche,
         "source": {
-            "videos": [{k: v[k] for k in ("url", "video_id", "channel", "title", "views")} for v in videos],
+            "videos": [
+                {k: v[k] for k in ("url", "video_id", "channel", "title", "views")}
+                for v in videos
+            ],
             "format_card_ref": videos[0]["ref"].rsplit("/", 1)[0] + "/",
-            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT)).replace("\\", "/"),
+            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT)).replace(
+                "\\", "/"
+            ),
         },
         "format": {
             "style": style,
@@ -437,19 +561,30 @@ def compile_brief(niche, voice=None, language="fr"):
     return brief
 
 
-def readiness(brief):
-    """Signaux 'niche prête ?' lus du brief seul — les TODO/fallback silencieux
-    qu'on veut voir AVANT de faire confiance à la sortie (surtout niche fraîche).
-    Retourne la liste des manques ([] = tout couplé)."""
+def readiness(brief, format_report=None):
+    """Signaux 'niche prête ?' lus du brief seul (+ rapport cards optionnel) —
+    les TODO/fallback silencieux qu'on veut voir AVANT de faire confiance à la
+    sortie (surtout niche fraîche). Retourne la liste des manques ([] = tout
+    couplé). format_report (dict retourné par inspect_cards) est une catégorie
+    d'avertissement séparée des avertissements voix/moteur existants — ne les
+    fusionne pas."""
     warn = []
     if str(brief["script"]["voice_id"]).startswith("TODO"):
-        warn.append("voix NON calibrée (budget mots sur wpm _default) -> calibrate-voice")
+        warn.append(
+            "voix NON calibrée (budget mots sur wpm _default) -> calibrate-voice"
+        )
     if any(str(p["engine"]).startswith("TODO") for p in brief["prompt_pack"]):
         warn.append("aucun verdict moteur dans ENGINE-FACTS -> gate pilote avant prod")
     if brief["format"]["style"] == "other":
         warn.append("style='other' : pas de FORMAT CARD exploitable -> extract-format")
     if brief["format"]["hook_mechanic"] == "other":
         warn.append("hook_mechanic='other' : mécanique de hook non résolue")
+    if format_report and format_report["n_valid"] != format_report["n_videos"]:
+        warn.append(
+            f"couverture FORMAT CARD incomplète: {format_report['n_valid']}/"
+            f"{format_report['n_videos']} cards valides -> extract-format sur "
+            "les vidéos manquantes/invalides"
+        )
     return warn
 
 
@@ -459,9 +594,21 @@ def main():
     ap.add_argument("--voice", help="alias voice_wpm.json (défaut: auto par niche)")
     ap.add_argument("--language", default="fr")
     ap.add_argument("--out")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="lève si couverture/validité/majorité des FORMAT CARDs insuffisante",
+    )
     args = ap.parse_args()
 
-    brief = compile_brief(args.niche, voice=args.voice, language=args.language)
+    try:
+        brief = compile_brief(
+            args.niche, voice=args.voice, language=args.language, strict=args.strict
+        )
+    except ValueError as e:
+        print(f"ERREUR: {e}")
+        sys.exit(1)
+
     out = Path(args.out) if args.out else HERE / f"brief_{args.niche}.json"
     out.write_text(json.dumps(brief, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"OK — brief valide ecrit: {out}")
@@ -469,7 +616,8 @@ def main():
         f"  beats: {len(brief['script']['beats'])}  shots: {len(brief['shots'])}  "
         f"wpm: {brief['script']['target_wpm']}  voice: {brief['script']['voice_id']}"
     )
-    warn = readiness(brief)
+    card_report = inspect_cards(load_registry(args.niche))
+    warn = readiness(brief, card_report)
     if warn:
         print("  ⚠ niche pas encore prête:")
         for w in warn:
