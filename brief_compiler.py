@@ -163,13 +163,16 @@ def _bullets(block):
 
 def _inspect_one(v):
     """fcr.inspect_file()-shaped dict ({"n_sections","valid","errors","card"})
+    avec ``format_card_status`` explicite (None pour les fixtures textuelles
+    sans statut). Un statut source non nul peut signaler un blocage qui ne doit
+    pas être confondu avec une card manquante.
     pour une vidéo. Préfère "card_inspect", déjà calculé par load_registry via
     la surface publique fcr.inspect_file(f) (pas de deuxième parse). Fallback
     pour la forme de test synthétique {"card": <texte>} : parse à la demande
     via fcr.parse_card, seule voie encore publique sur du texte déjà en main."""
     inspected = v.get("card_inspect")
     if inspected is not None:
-        return inspected
+        return {**inspected, "format_card_status": inspected.get("format_card_status")}
     text = v.get("card", "")
     if not text:
         return {
@@ -177,6 +180,7 @@ def _inspect_one(v):
             "valid": False,
             "errors": ["no FORMAT CARD section found"],
             "card": None,
+            "format_card_status": None,
         }
     card = fcr.parse_card(text)
     return {
@@ -184,6 +188,7 @@ def _inspect_one(v):
         "valid": card["valid"],
         "errors": card["errors"],
         "card": card,
+        "format_card_status": None,
     }
 
 
@@ -201,6 +206,8 @@ def inspect_cards(videos):
                         (dupliquée ou non, valide ou non)
       n_valid        — nb de vidéos avec une card présente, UNIQUE et valide
                         (les 3 champs résolus)
+      n_blocked      — nb de vidéos bloquées par un statut source explicite
+      blocked        — [{"video_id":.., "status":..}] hors erreurs ordinaires
       errors         — [{"video_id":.., "error":..}] pour absente/dupliquée/invalide
       majority       — {"style":.., "realism":.., "hook_mechanic":..} = valeur la
                         plus fréquente par champ parmi les cards valides (None si
@@ -210,11 +217,22 @@ def inspect_cards(videos):
     """
     n_videos = len(videos)
     n_present = 0
+    n_blocked = 0
+    blocked = []
     errors = []
     valid_fields = []
     for v in videos:
         vid = v.get("video_id", v.get("ref", "?"))
         inspected = _inspect_one(v)
+        if (
+            inspected["n_sections"] == 0
+            and inspected.get("format_card_status") == "blocked_source_unavailable"
+        ):
+            n_blocked += 1
+            blocked.append(
+                {"video_id": vid, "status": "blocked_source_unavailable"}
+            )
+            continue
         if inspected["n_sections"] == 0:
             errors.append({"video_id": vid, "error": "missing FORMAT CARD"})
             continue
@@ -244,6 +262,8 @@ def inspect_cards(videos):
         "n_videos": n_videos,
         "n_present": n_present,
         "n_valid": n_valid,
+        "n_blocked": n_blocked,
+        "blocked": blocked,
         "errors": errors,
         "majority": majority,
         "majority_share": majority_share,
@@ -486,6 +506,10 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False):
             f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
             for e in card_report["errors"]
         ]
+        problems.extend(
+            f"{ref_by_id.get(entry['video_id'], entry['video_id'])}: {entry['status']}"
+            for entry in card_report.get("blocked", [])
+        )
         if card_report["n_valid"] > 0:
             low = [
                 field
@@ -610,7 +634,8 @@ def readiness(brief, format_report=None):
     sortie (surtout niche fraîche). Retourne la liste des manques ([] = tout
     couplé). format_report (dict retourné par inspect_cards) est une catégorie
     d'avertissement séparée des avertissements voix/moteur existants — ne les
-    fusionne pas."""
+    fusionne pas. Les blocages source sont signalés explicitement, séparément
+    des erreurs ordinaires de couverture."""
     warn = []
     if str(brief["script"]["voice_id"]).startswith("TODO"):
         warn.append(
@@ -623,6 +648,11 @@ def readiness(brief, format_report=None):
     if brief["format"]["hook_mechanic"] == "other":
         warn.append("hook_mechanic='other' : mécanique de hook non résolue")
     if format_report:
+        if format_report.get("n_blocked", 0):
+            statuses = sorted(
+                {entry["status"] for entry in format_report.get("blocked", [])}
+            )
+            warn.append("couverture FORMAT CARD bloquée: " + ", ".join(statuses))
         if format_report["n_valid"] != format_report["n_videos"]:
             warn.append(
                 f"couverture FORMAT CARD incomplète: {format_report['n_valid']}/"

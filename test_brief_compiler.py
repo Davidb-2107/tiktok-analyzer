@@ -134,6 +134,70 @@ def _test_cards_fixtures():
     # Régression : une niche vide n'est pas une niche complète.
     assert bc.parse_cards([]) is None
 
+    # Source indisponible : ce n'est pas un missing ordinaire. Le blocage doit
+    # rester visible dans une catégorie dédiée du rapport.
+    blocked_report = bc.inspect_cards(
+        [
+            {
+                "video_id": "blocked",
+                "card_inspect": {
+                    "n_sections": 0,
+                    "valid": False,
+                    "card": None,
+                    "format_card_status": "blocked_source_unavailable",
+                },
+            }
+        ]
+    )
+    assert blocked_report["n_blocked"] == 1
+    assert blocked_report["blocked"] == [
+        {
+            "video_id": "blocked",
+            "status": "blocked_source_unavailable",
+        }
+    ]
+    assert blocked_report["errors"] == []
+
+    # Sans statut explicite, la forme historique reste un missing ordinaire.
+    missing_report = bc.inspect_cards(
+        [
+            {
+                "video_id": "missing-no-status",
+                "card_inspect": {"n_sections": 0, "valid": False, "card": None},
+            }
+        ]
+    )
+    assert missing_report["n_blocked"] == 0
+    assert missing_report["blocked"] == []
+    assert missing_report["errors"] == [
+        {"video_id": "missing-no-status", "error": "missing FORMAT CARD"}
+    ]
+
+    # Un statut source bloqué ne doit pas masquer une inspection déjà valide.
+    valid_blocked_report = bc.inspect_cards(
+        [
+            {
+                "video_id": "valid-but-blocked",
+                "card_inspect": {
+                    "n_sections": 1,
+                    "valid": True,
+                    "card": {
+                        "fields": {
+                            "video_style": "AI animation",
+                            "realism": 5,
+                            "hook_mechanic": "text-tease",
+                        }
+                    },
+                    "format_card_status": "blocked_source_unavailable",
+                },
+            }
+        ]
+    )
+    assert valid_blocked_report["n_valid"] == 1
+    assert valid_blocked_report["n_blocked"] == 0
+    assert valid_blocked_report["blocked"] == []
+    assert valid_blocked_report["errors"] == []
+
     # Niche complète : toutes les vidéos ont une card valide et unique ->
     # parse_cards retourne le triplet majoritaire.
     complete = [
@@ -217,6 +281,10 @@ def _test_cards_fixtures():
     assert any("majorité FORMAT CARD" in warning for warning in under_warnings)
     boundary_warnings = bc.readiness(readiness_probe, boundary_report)
     assert not any("majorité FORMAT CARD" in warning for warning in boundary_warnings)
+    blocked_warnings = bc.readiness(readiness_probe, blocked_report)
+    assert any(
+        "blocked_source_unavailable" in warning for warning in blocked_warnings
+    )
 
     # Card invalide (valeur de champ inconnue) : comptée comme invalide par
     # inspect_cards, jamais silencieusement classée "other".
