@@ -97,7 +97,8 @@ et multi-tenant prohibitifs) · **interne d'abord**, SaaS ensuite · **mono-nich
 
 Artefacts : `brief.schema.json` (contrat), `brief_compiler.py` (compilateur),
 `test_brief_compiler.py` + `brief_selfcheck.py` (verts, couplés au vrai SOT),
-`brief_neon_psycho.json` (brief réel généré).
+`brief_neon_psycho_<channel>.json` (briefs channel-scoped générés) ;
+`legacy/brief_neon_psycho.json` (artefact agrégé historique, non-production).
 
 ## 5. Verdict v1 (honnête, testé sur un gagnant @viraldtoprw)
 

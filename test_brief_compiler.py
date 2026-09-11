@@ -8,8 +8,10 @@ les cas synthétiques (couverture complète/partielle, card invalide/dupliquée,
 piège sous-chaîne) que le registre réel ne couvre pas tous à la fois.
 """
 
-import tempfile
+import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import brief_selfcheck as sc
@@ -38,7 +40,8 @@ def main():
             raise AssertionError("un module FCR non importable doit lever ImportError")
 
     target_s, shot_s = sc.load_sot()
-    brief = bc.compile_brief("neon_psycho")
+    channel = "@viraldtoprw"
+    brief = bc.compile_brief("neon_psycho", channel=channel)
 
     # Le contrat : la sortie valide contre le self-check existant (pas dupliqué).
     sc.validate_structure(brief)
@@ -52,7 +55,11 @@ def main():
     real_count = sum(
         1
         for f in registry_dir.glob("*.md")
-        if "video_url" in bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0]
+        if (
+            "video_url" in bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0]
+            and bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0].get("channel")
+            == channel
+        )
     )
     videos = brief["source"]["videos"]
     assert len(videos) > 0
@@ -64,7 +71,7 @@ def main():
     # Format : suivre la voie réellement sélectionnée par la couverture cards.
     # Le smoke test reste valable après un backfill complet du registre :
     # couverture incomplète -> fallback formula, couverture complète -> cards.
-    registry = bc.load_registry("neon_psycho")
+    registry = bc.load_registry("neon_psycho", channel=channel)
     card_report = bc.inspect_cards(registry)
     cards = bc.parse_cards(registry, report=card_report)
     if card_report["n_valid"] != card_report["n_videos"]:
@@ -127,11 +134,17 @@ def main():
     # --- inspect_cards / parse_cards : fixtures en mémoire -------------------
     _test_cards_fixtures()
 
+    # --- routage multi-chaînes : une formula par chaîne ----------------------
+    _test_channel_formula_routing()
+
+    # --- console Windows cp1252 : warning permissif --------------------------
+    _test_cp1252_warning()
+
     # --- strict : cas synthétiques, indépendants du registre réel ------------
     _test_strict_synthetic_cases()
 
     # --- permissif vs strict --------------------------------------------------
-    _test_strict_vs_permissive(brief, card_report)
+    _test_strict_vs_permissive(brief, card_report, channel)
 
     # --- readiness : signaux séparés voix/moteur/taxonomie vs couverture cards
     _test_readiness(brief, card_report)
@@ -152,6 +165,63 @@ def _card(style="AI animation", realism="5", hook="text-tease"):
         f"- **Video style:** {style}\n"
         f"- **Realism:** {realism} — fully animated wireframe\n"
     )
+
+
+def _test_channel_formula_routing():
+    try:
+        bc.load_registry("neon_psycho")
+    except ValueError as exc:
+        assert "--channel" in str(exc)
+    else:
+        raise AssertionError("un projet multi-chaînes doit exiger une chaîne")
+
+    virald = bc.load_registry("neon_psycho", channel="@viraldtoprw")
+    wise = bc.load_registry("neon_psycho", channel="@the.wisejourney")
+    assert len(virald) == len(wise) == 5
+    assert {v["channel"] for v in virald} == {"@viraldtoprw"}
+    assert {v["channel"] for v in wise} == {"@the.wisejourney"}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        formula_dir = Path(tmp)
+        (formula_dir / "virald.md").write_text("video 1000000000000000001", encoding="utf-8")
+        (formula_dir / "wise.md").write_text("video 2000000000000000001", encoding="utf-8")
+        original_formats = bc.FORMATS
+        bc.FORMATS = formula_dir
+        try:
+            path, _ = bc.find_formula([{"video_id": "1000000000000000001"}])
+            assert path.name == "virald.md"
+            try:
+                bc.find_formula(
+                    [
+                        {"video_id": "1000000000000000001"},
+                        {"video_id": "2000000000000000001"},
+                    ]
+                )
+            except ValueError as exc:
+                assert "sélection" in str(exc)
+            else:
+                raise AssertionError("un projet multi-chaînes ne doit pas choisir une formula")
+        finally:
+            bc.FORMATS = original_formats
+
+
+def _test_cp1252_warning():
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp1252"
+    with tempfile.TemporaryDirectory() as tmp:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "brief_compiler.py",
+                "dark_psycho",
+                "--out",
+                str(Path(tmp) / "brief.json"),
+            ],
+            env=env,
+            capture_output=True,
+        )
+    assert result.returncode == 0, result.stderr.decode("ascii", errors="replace")
+    assert b"niche pas encore" in result.stdout
 
 
 def _test_cards_fixtures():
@@ -469,10 +539,10 @@ def _test_strict_synthetic_cases():
     assert _strict_error(exact_two_thirds, bc.inspect_cards(exact_two_thirds)) is None
 
 
-def _test_strict_vs_permissive(brief, card_report):
+def _test_strict_vs_permissive(brief, card_report, channel):
     # Le mode permissif accepte le rapport réel, quelle que soit l'évolution
     # du registre.
-    bc.compile_brief("neon_psycho", strict=False)  # ne lève pas
+    bc.compile_brief("neon_psycho", channel=channel, strict=False)  # ne lève pas
 
     expected_strict_failure = (
         card_report["n_valid"] != card_report["n_videos"]
@@ -480,7 +550,7 @@ def _test_strict_vs_permissive(brief, card_report):
     )
     strict_error = None
     try:
-        bc.compile_brief("neon_psycho", strict=True)
+        bc.compile_brief("neon_psycho", channel=channel, strict=True)
     except ValueError as exc:
         strict_error = str(exc)
     if expected_strict_failure:

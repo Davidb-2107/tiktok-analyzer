@@ -12,8 +12,8 @@ brief.schema.json. Aucune constante de prod locale :
     les fichiers registre par-vidéo quand elles existent ; sinon inférence
     mots-clés sur la prose de la formula (fallback)
 
-Usage :  python brief_compiler.py <niche> [--voice ALIAS] [--language fr]
-                                  [--out brief_<niche>.json]
+Usage :  python brief_compiler.py <niche> [--channel CHANNEL] [--voice ALIAS] [--language fr]
+                                   [--out brief_<niche>[_<channel>].json]
 Self-check : python test_brief_compiler.py
 """
 
@@ -102,8 +102,8 @@ def parse_frontmatter(text):
     return meta, text[end + 4 :]
 
 
-def load_registry(niche):
-    """Toutes les vidéos du registre de la niche (frontmatter + transcript)."""
+def load_registry(niche, channel=None):
+    """Charge le registre, éventuellement limité à une chaîne exacte."""
     d = TRANSCRIPTS / niche
     assert d.is_dir(), f"registre introuvable: {d}"
     videos = []
@@ -131,18 +131,45 @@ def load_registry(niche):
                 "ref": f"Projects/Sourcing/transcripts/{niche}/{f.name}",
             }
         )
+    channels = sorted({v["channel"] for v in videos if v["channel"]})
+    if channel is None and len(channels) > 1:
+        raise ValueError(
+            f"[{niche}] plusieurs chaînes dans le registre ({', '.join(channels)}); "
+            "utilisez --channel <chaîne> pour compiler chaque formula séparément"
+        )
+    if channel is not None:
+        videos = [v for v in videos if v["channel"] == channel]
+        if not videos:
+            available = ", ".join(channels) or "aucune"
+            raise ValueError(
+                f"[{niche}] chaîne introuvable: {channel}; disponibles: {available}"
+            )
     assert videos, f"registre vide: {d}"
     return videos
 
 
 def find_formula(videos):
-    """Retrouve la CHANNEL FORMULA du registre : le fichier formats/*.md dont le
-    frontmatter `videos:` recoupe les URLs de la niche."""
+    """Retrouve l'unique formula couvrant toute la sélection de vidéos."""
     ids = {v["video_id"] for v in videos}
+    candidates = []
+    partial = []
     for f in sorted(FORMATS.glob("*.md")):
         text = f.read_text(encoding="utf-8")
-        if any(vid in text for vid in ids):
-            return f, text
+        formula_ids = set(re.findall(r"(?<!\d)\d{18,20}(?!\d)", text))
+        if ids <= formula_ids:
+            candidates.append((f, text))
+        elif ids & formula_ids:
+            partial.append(f.name)
+    if len(candidates) > 1:
+        names = ", ".join(f.name for f, _ in candidates)
+        raise ValueError(f"sélection couverte par plusieurs CHANNEL FORMULA: {names}")
+    if not candidates and partial:
+        raise ValueError(
+            "sélection multi-chaînes ou incomplète: aucune CHANNEL FORMULA ne "
+            "couvre toutes les vidéos; sélectionnez --channel"
+        )
+    if candidates:
+        return candidates[0]
     return None, None
 
 
@@ -493,9 +520,11 @@ def build_shots(beats, shot_s):
 
 
 # --- compilation --------------------------------------------------------------
-def compile_brief(niche, voice=None, language="fr", strict=False):
+def compile_brief(niche, voice=None, language="fr", strict=False, channel=None):
     """Compile un brief exécutable ; lève ValueError en --strict (cf. plus bas)."""
-    brief, _card_report = _compile_brief_full(niche, voice, language, strict)
+    brief, _card_report = _compile_brief_full(
+        niche, voice, language, strict, channel=channel
+    )
     return brief
 
 
@@ -528,12 +557,12 @@ def _enforce_strict_cards(niche, videos, card_report):
         )
 
 
-def _compile_brief_full(niche, voice=None, language="fr", strict=False):
+def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=None):
     """Comme compile_brief, mais retourne aussi le card_report déjà calculé en
     interne — évite à main() de relire le registre + rappeler inspect_cards()
     juste pour le rapport de couverture passé à readiness()."""
     target_s, shot_s = sc.load_sot()
-    videos = load_registry(niche)
+    videos = load_registry(niche, channel=channel)
     formula_path, formula_text = find_formula(videos)
     assert formula_text, (
         f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
@@ -711,6 +740,10 @@ def readiness(brief, format_report=None):
 def main():
     ap = argparse.ArgumentParser(description="Compile format_card -> brief.json")
     ap.add_argument("niche")
+    ap.add_argument(
+        "--channel",
+        help="chaîne exacte à compiler; obligatoire pour une niche multi-chaînes",
+    )
     ap.add_argument("--voice", help="alias voice_wpm.json (défaut: auto par niche)")
     ap.add_argument("--language", default="fr")
     ap.add_argument("--out")
@@ -723,13 +756,18 @@ def main():
 
     try:
         brief, card_report = _compile_brief_full(
-            args.niche, voice=args.voice, language=args.language, strict=args.strict
+            args.niche,
+            voice=args.voice,
+            language=args.language,
+            strict=args.strict,
+            channel=args.channel,
         )
     except ValueError as e:
         print(f"ERREUR: {e}")
         sys.exit(1)
 
-    out = Path(args.out) if args.out else HERE / f"brief_{args.niche}.json"
+    suffix = f"_{_slug(args.channel)}" if args.channel else ""
+    out = Path(args.out) if args.out else HERE / f"brief_{args.niche}{suffix}.json"
     out.write_text(json.dumps(brief, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"OK — brief valide ecrit: {out}")
     print(
@@ -738,7 +776,7 @@ def main():
     )
     warn = readiness(brief, card_report)
     if warn:
-        print("  ⚠ niche pas encore prête:")
+        print("  WARNING: niche pas encore prête:")
         for w in warn:
             print(f"    - {w}")
     else:

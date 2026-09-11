@@ -58,6 +58,9 @@
 5. Le mode strict échoue si une card manque, est dupliquée, contient un champ inconnu ou si aucune modalité ne représente au moins deux tiers des cards. Cette dernière règle empêche de faire passer une niche multi-format pour un format unique.
 6. Le backfill complète uniquement les cards absentes. Il ne relance pas une skill LLM depuis Python et ne remplace pas une card existante sans `--replace` explicite.
 7. `blocked_source_unavailable` est un statut source explicite : il est accepté par les vérificateurs du registre/backfill, mais compte toujours dans le total analyzer et n'est jamais traité comme une card valide. Le mode analyzer `--strict` reste en échec explicite tant que cette vidéo ne peut pas être analysée.
+8. Une niche multi-chaînes se compile par chaîne exacte (`--channel`) : le registre, les FORMAT CARDs, la CHANNEL FORMULA et le brief restent dans ce même périmètre. Une compilation agrégée sans chaîne est refusée ; aucune formula partielle n'est choisie.
+9. Décision Tâche 6 (2026-09-11) : conserver la sémantique canonique actuelle de `Realism` (`1 = footage réel`, `5 = animé/stylisé`). L'option future d'une échelle inversée photoréaliste devra faire l'objet d'une migration explicite des cards et des consommateurs ; elle n'est pas appliquée maintenant.
+10. État Tâche 6 (2026-09-11) : les candidats de sous-clusters sont documentés dans le vault, mais aucun mapping canonique n'alimente encore un routage `--cluster`. `legacy/brief_neon_psycho.json` reste un artefact historique non-production ; les briefs suffixés par chaîne sont les sorties actuelles.
 
 ## 3. Fichiers impactés
 
@@ -70,7 +73,7 @@
 | `Shared/claude-plugins/tiktok-analyzer/skills/extract-format/SKILL.md` | Modifier | Ajouter la postcondition de validation à l'étape 5 existante |
 | `brief_compiler.py` | Modifier | Utiliser le contrat partagé, gérer couverture/strict/fallback |
 | `test_brief_compiler.py` | Modifier | Corriger le smoke test réel et tester la couverture partielle |
-| `brief_neon_psycho.json`, `brief_dark_psycho.json` | Régénérer | Produire les briefs après backfill validé |
+| `brief_neon_psycho_<channel>.json`, `brief_dark_psycho.json` | Régénérer | Produire les briefs après backfill validé |
 | `POSITIONING.md` | Modifier | Marquer uniquement la dette taxonomique comme résolue |
 
 ## 4. Plan d'exécution
@@ -141,8 +144,8 @@ def inspect_cards(videos: list) -> dict:
 def parse_cards(videos: list):
     """Return (style, realism, hook_mechanic) only for complete valid input; else None."""
 
-def compile_brief(niche, voice=None, language="fr", strict=False):
-    """Compile a brief; strict=True raises on incomplete or heterogeneous cards."""
+def compile_brief(niche, voice=None, language="fr", strict=False, channel=None):
+    """Compile one channel-scoped brief; strict=True raises on bad cards."""
 
 def readiness(brief, format_report=None) -> list:
     """Keep existing readiness checks and optionally add card coverage diagnostics."""
@@ -195,31 +198,38 @@ python Projects/Sourcing/tools/backfill_cards.py --niche dark_psycho --verify
 - [x] Exécuter d'abord les deux `--check`, puis analyser les frames existantes avant de relancer l'API pour les vidéos sans manifest.
 - [x] Après chaque lot, exécuter le `--verify` correspondant et conserver le diff des fichiers transcripts comme preuve de l'absence de modification du verbatim.
 
-### Tâche 6 — Régénérer, vérifier et documenter — à venir
+### Tâche 6 — Régénérer, vérifier et documenter — en cours
 
 **Files:**
 
-- Regenerate: `brief_neon_psycho.json`, `brief_dark_psycho.json`
+- Regenerate: `brief_neon_psycho_<channel>.json`, `brief_dark_psycho.json` après résolution des points encore ouverts
+- Preserve: `legacy/brief_neon_psycho.json` historique, conservé comme `legacy/non-production` et non supprimé
 - Modify: `POSITIONING.md:118-122`
 
-- [ ] Vérifier que les 10 fichiers `neon_psycho` et les 8 fichiers `dark_psycho` ont chacun exactement une card valide.
-- [ ] Exécuter `python brief_compiler.py neon_psycho --strict` et `python brief_compiler.py dark_psycho --strict`.
+- [x] Vérifier que `neon_psycho` possède 10/10 cards valides et que `dark_psycho` possède 7/8 cards valides, avec une source explicitement bloquée (`blocked_source_unavailable`) sans card inventée.
+- [x] Séparer les compilations `neon_psycho` par chaîne (`--channel`) ; la séparation est implémentée et vérifiée, l'agrégat multi-chaînes est refusé et une `channel_formula_ref` est vérifiée par chaîne.
+- [ ] Différer le routage `--cluster` : aucun mapping canonique de sous-formula n'existe. Les candidats `virald` et `wise` sont documentés dans le worktree vault, mais ne sont pas encore des formulas de production.
+- [x] Conserver `Realism` selon le contrat canonique actuel ; noter l'option d'échelle inversée comme migration future uniquement.
+- [x] Rendre le warning permissif compatible avec les consoles Windows `cp1252` ; conserver le symbole Unicode hors du chemin d'affichage.
+- [ ] Exécuter le mode strict par chaîne (`python brief_compiler.py neon_psycho --channel <chaîne> --strict`) ; ne pas clore `dark_psycho` tant que le statut de sa source n'est pas confirmé.
 - [ ] Exécuter `python brief_selfcheck.py` puis `python test_brief_compiler.py`.
 - [ ] Vérifier que les briefs prennent leur taxonomie depuis les cards et que `style` et `hook_mechanic` ne proviennent plus d'un fallback dans le chemin strict.
-- [ ] Accepter comme résultat normal que `dark_psycho` conserve encore ses avertissements voix/moteur ; ils ne doivent pas être déclarés résolus par ce plan.
+- [ ] Conserver `dark_psycho` ouvert : statut source à confirmer, voix non calibrée et moteur à vérifier ; aucun de ces points ne doit être déclaré résolu par ce plan.
 - [ ] Mettre à jour `POSITIONING.md` pour déclarer résolue uniquement la dette d'archivage/parsing taxonomique.
 - [ ] Vérifier le diff et séparer les éventuels commits Sourcing, skill et Analyzer selon le dépôt qui les contient ; ne pas regrouper des changements de données non vérifiés avec le code.
 
 ## 5. Critères d'acceptation
 
-- Chaque fichier transcript ciblé possède exactement une section `## FORMAT CARD`, sauf une entrée portant le statut explicite `blocked_source_unavailable` et sa justification.
+- L'état vérifié est `neon_psycho` à 10/10 cards valides et `dark_psycho` à 7/8 cards valides, avec une entrée portant le statut explicite `blocked_source_unavailable` et sa justification.
 - `python Projects/Sourcing/tools/format_card_registry.py --verify --niche <niche>` ne signale aucune card manquante, dupliquée ou invalide ; les sources blocked sont comptées séparément et restent visibles.
 - Une entrée inconnue ou partielle est refusée par le validateur et n'est jamais convertie silencieusement en valeur exploitable.
 - Une couverture partielle active le fallback uniquement en mode permissif et produit un avertissement `n_valid/n_total`.
-- `python brief_compiler.py neon_psycho --strict` réussit après backfill ; `dark_psycho --strict` ne devient vert qu'après récupération de la source bloquée, et son échec actuel doit rester explicite.
+- La séparation de `neon_psycho` par chaîne (`--channel`) est implémentée et vérifiée. Le routage `--cluster` est différé car aucun mapping canonique de sous-formula n'existe ; `virald` et `wise` restent documentés dans le worktree vault et ne sont pas des formulas de production. L'échec actuel des deux chaînes sur `hook_mechanic < 2/3` reste explicite, sans routage de cluster implicite.
+- Le mode strict reste ouvert pour `neon_psycho` par chaîne ; `dark_psycho --strict` reste ouvert tant que le statut de la source n'est pas confirmé, la voix n'est pas calibrée et le moteur n'est pas vérifié.
 - `python brief_selfcheck.py` et `python test_brief_compiler.py` réussissent.
 - Aucun champ du `brief.schema.json` n'est ajouté ou retiré.
-- La readiness taxonomique est propre pour les cards valides ; le warning de source bloquée et les valeurs non résolues de voix/moteur de `dark_psycho` restent explicitement hors périmètre de résolution immédiate.
+- La readiness taxonomique est propre pour les cards valides ; le statut source à confirmer, la voix non calibrée et le moteur à vérifier de `dark_psycho` restent explicitement hors périmètre de résolution immédiate.
+- Le fichier historique `legacy/brief_neon_psycho.json` est conservé comme `legacy/non-production` et n'est pas supprimé.
 - Une seconde exécution du backfill ne duplique aucune section et ne modifie pas un transcript existant.
 
 ## 6. Risques et réponses
