@@ -347,8 +347,14 @@ def _test_arbitrary_channel_routing():
             assert len(registry) == 1
             assert all(f"/{channel[1:]}/" in v["ref"] for v in registry)
 
-        _expect_value_error(lambda: bc.load_registry(niche), "utilisez --channel")
-        _expect_value_error(lambda: bc.load_registry(niche), "@alpha")
+        try:
+            bc.load_registry(niche)
+        except ValueError as exc:
+            message = str(exc)
+            assert "utilisez --channel" in message
+            assert all(channel in message for channel, *_ in channels)
+        else:
+            raise AssertionError("un registre multi-chaînes doit exiger --channel")
         _expect_value_error(lambda: bc.compile_brief(niche), "utilisez --channel")
         _expect_value_error(
             lambda: bc.load_registry(niche, channel="@Alpha"), "non canonique"
