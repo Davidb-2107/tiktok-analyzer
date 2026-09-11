@@ -1,4 +1,5 @@
 ---
+channel: "@fixture_a"
 videos: 1234567890123456789
 ---
 

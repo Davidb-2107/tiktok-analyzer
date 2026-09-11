@@ -56,7 +56,7 @@ def main():
     registry_dir = sc.VAULT / "Projects" / "Sourcing" / "transcripts" / "neon_psycho"
     real_count = sum(
         1
-        for f in registry_dir.glob("*.md")
+        for f in registry_dir.rglob("*.md")
         if (
             "video_url" in bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0]
             and bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0].get("channel")
@@ -170,42 +170,51 @@ def _card(style="AI animation", realism="5", hook="text-tease"):
 
 
 def _test_channel_formula_routing(channel):
+    fixture_a = bc.load_registry("neon_psycho", channel="@fixture_a")
+    fixture_b = bc.load_registry("neon_psycho", channel="@fixture_b")
+    assert {v["channel"] for v in fixture_a} == {"@fixture_a"}
+    assert {v["channel"] for v in fixture_b} == {"@fixture_b"}
+    assert all("/fixture_a/" in v["ref"] for v in fixture_a)
+    assert all("/fixture_b/" in v["ref"] for v in fixture_b)
     try:
         bc.load_registry("neon_psycho")
     except ValueError as exc:
-        assert "--channel" in str(exc)
+        assert "utilisez --channel" in str(exc)
     else:
-        assert len(bc.load_registry("neon_psycho", channel=channel)) == 1
-        return
+        raise AssertionError("un registre multi-chaînes doit exiger --channel")
+    try:
+        bc.load_registry("neon_psycho", channel="fixture_a")
+    except ValueError as exc:
+        assert "non canonique" in str(exc)
+    else:
+        raise AssertionError("une chaîne sans @ doit être rejetée")
 
-    virald = bc.load_registry("neon_psycho", channel="@viraldtoprw")
-    wise = bc.load_registry("neon_psycho", channel="@the.wisejourney")
-    assert len(virald) == len(wise) == 5
-    assert {v["channel"] for v in virald} == {"@viraldtoprw"}
-    assert {v["channel"] for v in wise} == {"@the.wisejourney"}
-
-    with tempfile.TemporaryDirectory() as tmp:
-        formula_dir = Path(tmp)
-        (formula_dir / "virald.md").write_text("video 1000000000000000001", encoding="utf-8")
-        (formula_dir / "wise.md").write_text("video 2000000000000000001", encoding="utf-8")
-        original_formats = bc.FORMATS
-        bc.FORMATS = formula_dir
-        try:
-            path, _ = bc.find_formula([{"video_id": "1000000000000000001"}])
-            assert path.name == "virald.md"
-            try:
-                bc.find_formula(
-                    [
-                        {"video_id": "1000000000000000001"},
-                        {"video_id": "2000000000000000001"},
-                    ]
-                )
-            except ValueError as exc:
-                assert "sélection" in str(exc)
-            else:
-                raise AssertionError("un projet multi-chaînes ne doit pas choisir une formula")
-        finally:
-            bc.FORMATS = original_formats
+    brief_a = bc.compile_brief("neon_psycho", channel="@fixture_a")
+    brief_b = bc.compile_brief("neon_psycho", channel="@fixture_b")
+    assert brief_a["source"]["channel"] == "@fixture_a"
+    assert brief_b["source"]["channel"] == "@fixture_b"
+    assert "/fixture_a/" in brief_a["source"]["format_card_ref"]
+    assert "/fixture_b/" in brief_b["source"]["format_card_ref"]
+    assert "/fixture_a" in brief_a["source"]["channel_formula_ref"]
+    assert "/fixture_b" in brief_b["source"]["channel_formula_ref"]
+    assert (
+        brief_a["format"]["style"],
+        brief_a["format"]["hook_mechanic"],
+        brief_a["format"]["realism"],
+    ) == ("AI animation", "text-tease", 5), brief_a["format"]
+    assert (
+        brief_b["format"]["style"],
+        brief_b["format"]["hook_mechanic"],
+        brief_b["format"]["realism"],
+    ) == ("POV skit", "question", 2), brief_b["format"]
+    assert brief_a["format"]["constant"]["camera"] == "virtual AI close-up"
+    assert brief_b["format"]["constant"]["camera"] == "handheld POV reaction"
+    assert all("ci/vault" not in ref for ref in (
+        brief_a["source"]["format_card_ref"],
+        brief_a["source"]["channel_formula_ref"],
+        brief_b["source"]["format_card_ref"],
+        brief_b["source"]["channel_formula_ref"],
+    ))
 
 
 def _test_cp1252_warning():

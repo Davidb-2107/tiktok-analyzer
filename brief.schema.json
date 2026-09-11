@@ -19,6 +19,7 @@
       "required": ["videos"],
       "additionalProperties": false,
       "properties": {
+        "channel": { "type": "string" },
         "videos": {
           "type": "array",
           "minItems": 1,

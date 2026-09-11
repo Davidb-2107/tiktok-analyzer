@@ -44,10 +44,11 @@ jobs:
           fi
       - name: Run brief compiler self-check
         env:
-          VAULT_DIR: ${{ github.workspace }}/ci/vault
-          FORMAT_CARD_TEST_CHANNEL: '@ci'
+          VAULT_DIR: ${{ github.workspace }}/tests/fixtures/vault
         run: |
-          python -B test_brief_compiler.py
+          for channel in @fixture_a @fixture_b; do
+            FORMAT_CARD_TEST_CHANNEL="$channel" python -B test_brief_compiler.py
+          done
           python -B brief_selfcheck.py
       - name: Prepare runtime directory
         run: sudo mkdir -p /app/temp && sudo chmod 777 /app/temp
