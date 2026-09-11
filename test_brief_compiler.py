@@ -8,16 +8,42 @@ les cas synthétiques (couverture complète/partielle, card invalide/dupliquée,
 piège sous-chaîne) que le registre réel ne couvre pas tous à la fois.
 """
 
+import os
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
-import brief_compiler as bc
 import brief_selfcheck as sc
 
 
 def main():
+    # Import isolé : le compilateur doit charger le fichier configuré par
+    # chemin explicite, sans ajouter le dossier du vault à sys.path.
+    path_before = tuple(sys.path)
+    global bc
+    import brief_compiler as bc
+
+    isolated_fcr = bc._load_fcr_module(bc.FCR_MODULE)
+    assert tuple(sys.path) == path_before, "chargement FCR a modifié sys.path"
+    assert Path(bc.fcr.__file__).resolve() == bc.FCR_MODULE.resolve()
+    assert Path(isolated_fcr.__file__).resolve() == bc.FCR_MODULE.resolve()
+    with tempfile.TemporaryDirectory() as tmp:
+        broken = Path(tmp) / "format_card_registry.py"
+        broken.write_text("raise RuntimeError('fixture import failure')\n", encoding="utf-8")
+        try:
+            bc._load_fcr_module(broken)
+        except ImportError as exc:
+            assert str(broken) in str(exc)
+            assert isinstance(exc.__cause__, RuntimeError)
+        else:
+            raise AssertionError("un module FCR non importable doit lever ImportError")
+
     target_s, shot_s = sc.load_sot()
-    brief = bc.compile_brief("neon_psycho")
+    # The CI fixture uses a synthetic channel; production smoke tests keep the
+    # real default while CI declares its fixture-specific value explicitly.
+    channel = os.environ.get("FORMAT_CARD_TEST_CHANNEL", "@viraldtoprw")
+    brief = bc.compile_brief("neon_psycho", channel=channel)
 
     # Le contrat : la sortie valide contre le self-check existant (pas dupliqué).
     sc.validate_structure(brief)
@@ -31,7 +57,11 @@ def main():
     real_count = sum(
         1
         for f in registry_dir.glob("*.md")
-        if "video_url" in bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0]
+        if (
+            "video_url" in bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0]
+            and bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0].get("channel")
+            == channel
+        )
     )
     videos = brief["source"]["videos"]
     assert len(videos) > 0
@@ -43,7 +73,7 @@ def main():
     # Format : suivre la voie réellement sélectionnée par la couverture cards.
     # Le smoke test reste valable après un backfill complet du registre :
     # couverture incomplète -> fallback formula, couverture complète -> cards.
-    registry = bc.load_registry("neon_psycho")
+    registry = bc.load_registry("neon_psycho", channel=channel)
     card_report = bc.inspect_cards(registry)
     cards = bc.parse_cards(registry, report=card_report)
     if card_report["n_valid"] != card_report["n_videos"]:
@@ -106,8 +136,17 @@ def main():
     # --- inspect_cards / parse_cards : fixtures en mémoire -------------------
     _test_cards_fixtures()
 
+    # --- routage multi-chaînes : une formula par chaîne ----------------------
+    _test_channel_formula_routing(channel)
+
+    # --- console Windows cp1252 : warning permissif --------------------------
+    _test_cp1252_warning()
+
+    # --- strict : cas synthétiques, indépendants du registre réel ------------
+    _test_strict_synthetic_cases()
+
     # --- permissif vs strict --------------------------------------------------
-    _test_strict_vs_permissive(brief, card_report)
+    _test_strict_vs_permissive(brief, card_report, channel)
 
     # --- readiness : signaux séparés voix/moteur/taxonomie vs couverture cards
     _test_readiness(brief, card_report)
@@ -130,9 +169,134 @@ def _card(style="AI animation", realism="5", hook="text-tease"):
     )
 
 
+def _test_channel_formula_routing(channel):
+    try:
+        bc.load_registry("neon_psycho")
+    except ValueError as exc:
+        assert "--channel" in str(exc)
+    else:
+        assert len(bc.load_registry("neon_psycho", channel=channel)) == 1
+        return
+
+    virald = bc.load_registry("neon_psycho", channel="@viraldtoprw")
+    wise = bc.load_registry("neon_psycho", channel="@the.wisejourney")
+    assert len(virald) == len(wise) == 5
+    assert {v["channel"] for v in virald} == {"@viraldtoprw"}
+    assert {v["channel"] for v in wise} == {"@the.wisejourney"}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        formula_dir = Path(tmp)
+        (formula_dir / "virald.md").write_text("video 1000000000000000001", encoding="utf-8")
+        (formula_dir / "wise.md").write_text("video 2000000000000000001", encoding="utf-8")
+        original_formats = bc.FORMATS
+        bc.FORMATS = formula_dir
+        try:
+            path, _ = bc.find_formula([{"video_id": "1000000000000000001"}])
+            assert path.name == "virald.md"
+            try:
+                bc.find_formula(
+                    [
+                        {"video_id": "1000000000000000001"},
+                        {"video_id": "2000000000000000001"},
+                    ]
+                )
+            except ValueError as exc:
+                assert "sélection" in str(exc)
+            else:
+                raise AssertionError("un projet multi-chaînes ne doit pas choisir une formula")
+        finally:
+            bc.FORMATS = original_formats
+
+
+def _test_cp1252_warning():
+    dark_registry = sc.VAULT / "Projects" / "Sourcing" / "transcripts" / "dark_psycho"
+    if not dark_registry.is_dir():
+        return
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp1252"
+    with tempfile.TemporaryDirectory() as tmp:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "brief_compiler.py",
+                "dark_psycho",
+                "--out",
+                str(Path(tmp) / "brief.json"),
+            ],
+            env=env,
+            capture_output=True,
+        )
+    assert result.returncode == 0, result.stderr.decode("ascii", errors="replace")
+    assert b"niche pas encore" in result.stdout
+
+
 def _test_cards_fixtures():
     # Régression : une niche vide n'est pas une niche complète.
     assert bc.parse_cards([]) is None
+
+    # Source indisponible : ce n'est pas un missing ordinaire. Le blocage doit
+    # rester visible dans une catégorie dédiée du rapport.
+    blocked_report = bc.inspect_cards(
+        [
+            {
+                "video_id": "blocked",
+                "card_inspect": {
+                    "n_sections": 0,
+                    "valid": False,
+                    "card": None,
+                    "format_card_status": "blocked_source_unavailable",
+                },
+            }
+        ]
+    )
+    assert blocked_report["n_blocked"] == 1
+    assert blocked_report["blocked"] == [
+        {
+            "video_id": "blocked",
+            "status": "blocked_source_unavailable",
+        }
+    ]
+    assert blocked_report["errors"] == []
+
+    # Sans statut explicite, la forme historique reste un missing ordinaire.
+    missing_report = bc.inspect_cards(
+        [
+            {
+                "video_id": "missing-no-status",
+                "card_inspect": {"n_sections": 0, "valid": False, "card": None},
+            }
+        ]
+    )
+    assert missing_report["n_blocked"] == 0
+    assert missing_report["blocked"] == []
+    assert missing_report["errors"] == [
+        {"video_id": "missing-no-status", "error": "missing FORMAT CARD"}
+    ]
+
+    # Un statut source bloqué ne doit pas masquer une inspection déjà valide.
+    valid_blocked_report = bc.inspect_cards(
+        [
+            {
+                "video_id": "valid-but-blocked",
+                "card_inspect": {
+                    "n_sections": 1,
+                    "valid": True,
+                    "card": {
+                        "fields": {
+                            "video_style": "AI animation",
+                            "realism": 5,
+                            "hook_mechanic": "text-tease",
+                        }
+                    },
+                    "format_card_status": "blocked_source_unavailable",
+                },
+            }
+        ]
+    )
+    assert valid_blocked_report["n_valid"] == 1
+    assert valid_blocked_report["n_blocked"] == 0
+    assert valid_blocked_report["blocked"] == []
+    assert valid_blocked_report["errors"] == []
 
     # Niche complète : toutes les vidéos ont une card valide et unique ->
     # parse_cards retourne le triplet majoritaire.
@@ -142,6 +306,57 @@ def _test_cards_fixtures():
         {"video_id": "v3", "card": _card(hook="question")},
     ]
     assert bc.parse_cards(complete) == ("AI animation", 5, "text-tease")
+
+    # Valeurs canoniques absentes de l'ancien fixture CI réduit.
+    divergent_values = bc.inspect_cards(
+        [
+            {
+                "video_id": "canonical-values",
+                "card": _card(
+                    style="POV skit", realism="4", hook="direct address"
+                ),
+            }
+        ]
+    )
+    assert divergent_values["n_valid"] == 1, divergent_values["errors"]
+    assert divergent_values["majority"] == {
+        "style": "POV skit",
+        "realism": 4,
+        "hook_mechanic": "direct address",
+    }
+
+    # Chaque label requis est unique : une seconde occurrence contradictoire
+    # invalide la card au lieu de laisser gagner la première occurrence.
+    base = _card(style="POV skit", realism="4", hook="direct address")
+    duplicate_cases = (
+        (
+            "Video style",
+            base.replace(
+                "- **Video style:** POV skit",
+                "- **Video style:** POV skit\n- **Video style:** talking head",
+            ),
+        ),
+        (
+            "Hook mechanic",
+            base.replace(
+                "- **Hook mechanic:** direct address",
+                "- **Hook mechanic:** direct address\n- **Hook mechanic:** question",
+            ),
+        ),
+        (
+            "Realism",
+            base.replace(
+                "- **Realism:** 4 — fully animated wireframe",
+                "- **Realism:** 4 — fully animated wireframe\n- **Realism:** 1",
+            ),
+        ),
+    )
+    for label, card in duplicate_cases:
+        duplicate = bc.inspect_cards([{"video_id": label, "card": card}])
+        assert duplicate["n_valid"] == 0
+        assert duplicate["errors"] == [
+            {"video_id": label, "error": f"duplicate field: {label}"}
+        ]
 
     # Niche partielle : au moins une vidéo sans card -> parse_cards -> None.
     partial_missing = [
@@ -217,6 +432,10 @@ def _test_cards_fixtures():
     assert any("majorité FORMAT CARD" in warning for warning in under_warnings)
     boundary_warnings = bc.readiness(readiness_probe, boundary_report)
     assert not any("majorité FORMAT CARD" in warning for warning in boundary_warnings)
+    blocked_warnings = bc.readiness(readiness_probe, blocked_report)
+    assert any(
+        "blocked_source_unavailable" in warning for warning in blocked_warnings
+    )
 
     # Card invalide (valeur de champ inconnue) : comptée comme invalide par
     # inspect_cards, jamais silencieusement classée "other".
@@ -233,7 +452,7 @@ def _test_cards_fixtures():
     # comptée comme invalide/dupliquée, pas comme valide. inspect_file() ne
     # lit qu'un fichier réel -> on écrit un fichier temporaire pour rester sur
     # la surface publique du module partagé (pas de logique dupliquée ici).
-    import format_card_registry as fcr
+    fcr = bc.fcr
 
     dup_text = _card() + "\n" + _card(hook="question")
     with tempfile.TemporaryDirectory() as tmp:
@@ -262,10 +481,74 @@ def _test_cards_fixtures():
     assert trap_report["errors"][0]["error"]
 
 
-def _test_strict_vs_permissive(brief, card_report):
+def _strict_error(videos, report):
+    try:
+        bc._enforce_strict_cards("synthetic", videos, report)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _test_strict_synthetic_cases():
+    partial = [
+        {"video_id": "valid", "ref": "synthetic/valid.md", "card": _card()},
+        {"video_id": "missing", "ref": "synthetic/missing.md", "card": ""},
+    ]
+    partial_error = _strict_error(partial, bc.inspect_cards(partial))
+    assert partial_error is not None
+    assert "synthetic/missing.md: missing FORMAT CARD" in partial_error
+
+    blocked = [
+        {
+            "video_id": "blocked",
+            "ref": "synthetic/blocked.md",
+            "card_inspect": {
+                "n_sections": 0,
+                "valid": False,
+                "errors": ["no FORMAT CARD section found"],
+                "card": None,
+                "format_card_status": "blocked_source_unavailable",
+            },
+        }
+    ]
+    blocked_error = _strict_error(blocked, bc.inspect_cards(blocked))
+    assert blocked_error is not None
+    assert "synthetic/blocked.md: blocked_source_unavailable" in blocked_error
+
+    under_two_thirds = [
+        {"video_id": "under-1", "card": _card()},
+        {"video_id": "under-2", "card": _card()},
+        {"video_id": "under-3", "card": _card()},
+        {
+            "video_id": "under-4",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+        {
+            "video_id": "under-5",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+    ]
+    under_error = _strict_error(
+        under_two_thirds, bc.inspect_cards(under_two_thirds)
+    )
+    assert under_error is not None
+    assert "majorité < 2/3 pour: style, realism, hook_mechanic" in under_error
+
+    exact_two_thirds = [
+        {"video_id": "boundary-1", "card": _card()},
+        {"video_id": "boundary-2", "card": _card()},
+        {
+            "video_id": "boundary-3",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+    ]
+    assert _strict_error(exact_two_thirds, bc.inspect_cards(exact_two_thirds)) is None
+
+
+def _test_strict_vs_permissive(brief, card_report, channel):
     # Le mode permissif accepte le rapport réel, quelle que soit l'évolution
     # du registre.
-    bc.compile_brief("neon_psycho", strict=False)  # ne lève pas
+    bc.compile_brief("neon_psycho", channel=channel, strict=False)  # ne lève pas
 
     expected_strict_failure = (
         card_report["n_valid"] != card_report["n_videos"]
@@ -273,7 +556,7 @@ def _test_strict_vs_permissive(brief, card_report):
     )
     strict_error = None
     try:
-        bc.compile_brief("neon_psycho", strict=True)
+        bc.compile_brief("neon_psycho", channel=channel, strict=True)
     except ValueError as exc:
         strict_error = str(exc)
     if expected_strict_failure:

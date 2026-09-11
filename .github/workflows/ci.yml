@@ -45,6 +45,7 @@ jobs:
       - name: Run brief compiler self-check
         env:
           VAULT_DIR: ${{ github.workspace }}/ci/vault
+          FORMAT_CARD_TEST_CHANNEL: '@ci'
         run: |
           python -B test_brief_compiler.py
           python -B brief_selfcheck.py

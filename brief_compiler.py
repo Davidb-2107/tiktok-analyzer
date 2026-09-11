@@ -12,12 +12,13 @@ brief.schema.json. Aucune constante de prod locale :
     les fichiers registre par-vidéo quand elles existent ; sinon inférence
     mots-clés sur la prose de la formula (fallback)
 
-Usage :  python brief_compiler.py <niche> [--voice ALIAS] [--language fr]
-                                  [--out brief_<niche>.json]
+Usage :  python brief_compiler.py <niche> [--channel CHANNEL] [--voice ALIAS] [--language fr]
+                                   [--out brief_<niche>[_<channel>].json]
 Self-check : python test_brief_compiler.py
 """
 
 import argparse
+import importlib.util
 import json
 import math
 import re
@@ -46,10 +47,35 @@ if not FCR_MODULE.is_file():
         "La validation des cards ne peut pas continuer ; vérifiez que le module "
         "du vault Projects/Sourcing/tools est présent."
     )
-sys.path.insert(0, str(FCR_TOOLS))
+
+
+def _load_fcr_module(module_path):
+    """Load the configured FORMAT CARD registry without changing sys.path."""
+    spec = importlib.util.spec_from_file_location(
+        "_vault_format_card_registry", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(
+            "Impossible de construire le chargeur du validateur FORMAT CARD. "
+            f"Chemin attendu : {module_path}"
+        )
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise ImportError(
+            "Impossible d'importer le validateur FORMAT CARD du vault. "
+            f"Chemin attendu : {module_path} ; contexte : brief_compiler.py "
+            "en dépend pour inspecter et valider les cards, sans fallback silencieux."
+        ) from exc
+    return module
+
+
 try:
-    import format_card_registry as fcr
-except ImportError as exc:
+    fcr = _load_fcr_module(FCR_MODULE)
+except ImportError:
+    raise
+except Exception as exc:
     raise ImportError(
         "Impossible d'importer le validateur FORMAT CARD du vault. "
         f"Chemin attendu : {FCR_MODULE} ; contexte : brief_compiler.py "
@@ -76,8 +102,8 @@ def parse_frontmatter(text):
     return meta, text[end + 4 :]
 
 
-def load_registry(niche):
-    """Toutes les vidéos du registre de la niche (frontmatter + transcript)."""
+def load_registry(niche, channel=None):
+    """Charge le registre, éventuellement limité à une chaîne exacte."""
     d = TRANSCRIPTS / niche
     assert d.is_dir(), f"registre introuvable: {d}"
     videos = []
@@ -105,18 +131,45 @@ def load_registry(niche):
                 "ref": f"Projects/Sourcing/transcripts/{niche}/{f.name}",
             }
         )
+    channels = sorted({v["channel"] for v in videos if v["channel"]})
+    if channel is None and len(channels) > 1:
+        raise ValueError(
+            f"[{niche}] plusieurs chaînes dans le registre ({', '.join(channels)}); "
+            "utilisez --channel <chaîne> pour compiler chaque formula séparément"
+        )
+    if channel is not None:
+        videos = [v for v in videos if v["channel"] == channel]
+        if not videos:
+            available = ", ".join(channels) or "aucune"
+            raise ValueError(
+                f"[{niche}] chaîne introuvable: {channel}; disponibles: {available}"
+            )
     assert videos, f"registre vide: {d}"
     return videos
 
 
 def find_formula(videos):
-    """Retrouve la CHANNEL FORMULA du registre : le fichier formats/*.md dont le
-    frontmatter `videos:` recoupe les URLs de la niche."""
+    """Retrouve l'unique formula couvrant toute la sélection de vidéos."""
     ids = {v["video_id"] for v in videos}
+    candidates = []
+    partial = []
     for f in sorted(FORMATS.glob("*.md")):
         text = f.read_text(encoding="utf-8")
-        if any(vid in text for vid in ids):
-            return f, text
+        formula_ids = set(re.findall(r"(?<!\d)\d{18,20}(?!\d)", text))
+        if ids <= formula_ids:
+            candidates.append((f, text))
+        elif ids & formula_ids:
+            partial.append(f.name)
+    if len(candidates) > 1:
+        names = ", ".join(f.name for f, _ in candidates)
+        raise ValueError(f"sélection couverte par plusieurs CHANNEL FORMULA: {names}")
+    if not candidates and partial:
+        raise ValueError(
+            "sélection multi-chaînes ou incomplète: aucune CHANNEL FORMULA ne "
+            "couvre toutes les vidéos; sélectionnez --channel"
+        )
+    if candidates:
+        return candidates[0]
     return None, None
 
 
@@ -163,13 +216,16 @@ def _bullets(block):
 
 def _inspect_one(v):
     """fcr.inspect_file()-shaped dict ({"n_sections","valid","errors","card"})
+    avec ``format_card_status`` explicite (None pour les fixtures textuelles
+    sans statut). Un statut source non nul peut signaler un blocage qui ne doit
+    pas être confondu avec une card manquante.
     pour une vidéo. Préfère "card_inspect", déjà calculé par load_registry via
     la surface publique fcr.inspect_file(f) (pas de deuxième parse). Fallback
     pour la forme de test synthétique {"card": <texte>} : parse à la demande
     via fcr.parse_card, seule voie encore publique sur du texte déjà en main."""
     inspected = v.get("card_inspect")
     if inspected is not None:
-        return inspected
+        return {**inspected, "format_card_status": inspected.get("format_card_status")}
     text = v.get("card", "")
     if not text:
         return {
@@ -177,6 +233,7 @@ def _inspect_one(v):
             "valid": False,
             "errors": ["no FORMAT CARD section found"],
             "card": None,
+            "format_card_status": None,
         }
     card = fcr.parse_card(text)
     return {
@@ -184,6 +241,7 @@ def _inspect_one(v):
         "valid": card["valid"],
         "errors": card["errors"],
         "card": card,
+        "format_card_status": None,
     }
 
 
@@ -201,6 +259,8 @@ def inspect_cards(videos):
                         (dupliquée ou non, valide ou non)
       n_valid        — nb de vidéos avec une card présente, UNIQUE et valide
                         (les 3 champs résolus)
+      n_blocked      — nb de vidéos bloquées par un statut source explicite
+      blocked        — [{"video_id":.., "status":..}] hors erreurs ordinaires
       errors         — [{"video_id":.., "error":..}] pour absente/dupliquée/invalide
       majority       — {"style":.., "realism":.., "hook_mechanic":..} = valeur la
                         plus fréquente par champ parmi les cards valides (None si
@@ -210,11 +270,22 @@ def inspect_cards(videos):
     """
     n_videos = len(videos)
     n_present = 0
+    n_blocked = 0
+    blocked = []
     errors = []
     valid_fields = []
     for v in videos:
         vid = v.get("video_id", v.get("ref", "?"))
         inspected = _inspect_one(v)
+        if (
+            inspected["n_sections"] == 0
+            and inspected.get("format_card_status") == "blocked_source_unavailable"
+        ):
+            n_blocked += 1
+            blocked.append(
+                {"video_id": vid, "status": "blocked_source_unavailable"}
+            )
+            continue
         if inspected["n_sections"] == 0:
             errors.append({"video_id": vid, "error": "missing FORMAT CARD"})
             continue
@@ -244,6 +315,8 @@ def inspect_cards(videos):
         "n_videos": n_videos,
         "n_present": n_present,
         "n_valid": n_valid,
+        "n_blocked": n_blocked,
+        "blocked": blocked,
         "errors": errors,
         "majority": majority,
         "majority_share": majority_share,
@@ -447,18 +520,49 @@ def build_shots(beats, shot_s):
 
 
 # --- compilation --------------------------------------------------------------
-def compile_brief(niche, voice=None, language="fr", strict=False):
+def compile_brief(niche, voice=None, language="fr", strict=False, channel=None):
     """Compile un brief exécutable ; lève ValueError en --strict (cf. plus bas)."""
-    brief, _card_report = _compile_brief_full(niche, voice, language, strict)
+    brief, _card_report = _compile_brief_full(
+        niche, voice, language, strict, channel=channel
+    )
     return brief
 
 
-def _compile_brief_full(niche, voice=None, language="fr", strict=False):
+def _enforce_strict_cards(niche, videos, card_report):
+    """Raise when coverage, validity, or majority violates strict mode."""
+    ref_by_id = {
+        v["video_id"]: v.get("ref", v["video_id"])
+        for v in videos
+    }
+    problems = [
+        f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
+        for e in card_report["errors"]
+    ]
+    problems.extend(
+        f"{ref_by_id.get(entry['video_id'], entry['video_id'])}: {entry['status']}"
+        for entry in card_report.get("blocked", [])
+    )
+    if card_report["n_valid"] > 0:
+        low = [
+            field
+            for field, share in card_report["majority_share"].items()
+            if share < 2 / 3
+        ]
+        if low:
+            problems.append(f"majorité < 2/3 pour: {', '.join(low)}")
+    if problems:
+        raise ValueError(
+            f"[{niche}] --strict : couverture/validité/majorité des FORMAT "
+            "CARDs insuffisante:\n  " + "\n  ".join(problems)
+        )
+
+
+def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=None):
     """Comme compile_brief, mais retourne aussi le card_report déjà calculé en
     interne — évite à main() de relire le registre + rappeler inspect_cards()
     juste pour le rapport de couverture passé à readiness()."""
     target_s, shot_s = sc.load_sot()
-    videos = load_registry(niche)
+    videos = load_registry(niche, channel=channel)
     formula_path, formula_text = find_formula(videos)
     assert formula_text, (
         f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
@@ -481,24 +585,7 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False):
         )
 
     if strict:
-        ref_by_id = {v["video_id"]: v["ref"] for v in videos}
-        problems = [
-            f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
-            for e in card_report["errors"]
-        ]
-        if card_report["n_valid"] > 0:
-            low = [
-                field
-                for field, share in card_report["majority_share"].items()
-                if share < 2 / 3
-            ]
-            if low:
-                problems.append(f"majorité < 2/3 pour: {', '.join(low)}")
-        if problems:
-            raise ValueError(
-                f"[{niche}] --strict : couverture/validité/majorité des FORMAT "
-                "CARDs insuffisante:\n  " + "\n  ".join(problems)
-            )
+        _enforce_strict_cards(niche, videos, card_report)
 
     frames_dir = FRAMES / niche
     if frames_dir.is_dir():
@@ -610,7 +697,8 @@ def readiness(brief, format_report=None):
     sortie (surtout niche fraîche). Retourne la liste des manques ([] = tout
     couplé). format_report (dict retourné par inspect_cards) est une catégorie
     d'avertissement séparée des avertissements voix/moteur existants — ne les
-    fusionne pas."""
+    fusionne pas. Les blocages source sont signalés explicitement, séparément
+    des erreurs ordinaires de couverture."""
     warn = []
     if str(brief["script"]["voice_id"]).startswith("TODO"):
         warn.append(
@@ -623,6 +711,11 @@ def readiness(brief, format_report=None):
     if brief["format"]["hook_mechanic"] == "other":
         warn.append("hook_mechanic='other' : mécanique de hook non résolue")
     if format_report:
+        if format_report.get("n_blocked", 0):
+            statuses = sorted(
+                {entry["status"] for entry in format_report.get("blocked", [])}
+            )
+            warn.append("couverture FORMAT CARD bloquée: " + ", ".join(statuses))
         if format_report["n_valid"] != format_report["n_videos"]:
             warn.append(
                 f"couverture FORMAT CARD incomplète: {format_report['n_valid']}/"
@@ -647,6 +740,10 @@ def readiness(brief, format_report=None):
 def main():
     ap = argparse.ArgumentParser(description="Compile format_card -> brief.json")
     ap.add_argument("niche")
+    ap.add_argument(
+        "--channel",
+        help="chaîne exacte à compiler; obligatoire pour une niche multi-chaînes",
+    )
     ap.add_argument("--voice", help="alias voice_wpm.json (défaut: auto par niche)")
     ap.add_argument("--language", default="fr")
     ap.add_argument("--out")
@@ -659,13 +756,18 @@ def main():
 
     try:
         brief, card_report = _compile_brief_full(
-            args.niche, voice=args.voice, language=args.language, strict=args.strict
+            args.niche,
+            voice=args.voice,
+            language=args.language,
+            strict=args.strict,
+            channel=args.channel,
         )
     except ValueError as e:
         print(f"ERREUR: {e}")
         sys.exit(1)
 
-    out = Path(args.out) if args.out else HERE / f"brief_{args.niche}.json"
+    suffix = f"_{_slug(args.channel)}" if args.channel else ""
+    out = Path(args.out) if args.out else HERE / f"brief_{args.niche}{suffix}.json"
     out.write_text(json.dumps(brief, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"OK — brief valide ecrit: {out}")
     print(
@@ -674,7 +776,7 @@ def main():
     )
     warn = readiness(brief, card_report)
     if warn:
-        print("  ⚠ niche pas encore prête:")
+        print("  WARNING: niche pas encore prête:")
         for w in warn:
             print(f"    - {w}")
     else:
