@@ -8,6 +8,7 @@ les cas synthétiques (couverture complète/partielle, card invalide/dupliquée,
 piège sous-chaîne) que le registre réel ne couvre pas tous à la fois.
 """
 
+import json
 import os
 import subprocess
 import sys
@@ -48,6 +49,23 @@ def main():
     # Le contrat : la sortie valide contre le self-check existant (pas dupliqué).
     sc.validate_structure(brief)
     sc.validate_against_sot(brief, target_s, shot_s)
+    assert brief["schema_version"] == "0.2"
+    assert brief["source"]["channel"].startswith("@")
+    invalid = json.loads(json.dumps(brief))
+    del invalid["source"]["channel"]
+    try:
+        sc.validate_structure(invalid)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("un brief sans source.channel doit être rejeté")
+    invalid["source"]["channel"] = "@Fixture_A"
+    try:
+        sc.validate_structure(invalid)
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("un source.channel non canonique doit être rejeté")
 
     # Sources : toutes les vidéos du registre réel sont référencées, sans
     # coder en dur un compte historique (le registre grandit) — compte les

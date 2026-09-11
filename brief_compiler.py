@@ -665,7 +665,7 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=
             },
         ]
     brief = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "niche": niche,
         "source": {
             "channel": videos[0]["channel"],
