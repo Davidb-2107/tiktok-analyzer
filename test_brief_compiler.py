@@ -9,6 +9,7 @@ piège sous-chaîne) que le registre réel ne couvre pas tous à la fois.
 """
 
 import tempfile
+import sys
 from pathlib import Path
 
 import brief_compiler as bc
@@ -16,6 +17,24 @@ import brief_selfcheck as sc
 
 
 def main():
+    # Import isolé : le compilateur doit charger le fichier configuré par
+    # chemin explicite, sans ajouter le dossier du vault à sys.path.
+    path_before = tuple(sys.path)
+    isolated_fcr = bc._load_fcr_module(bc.FCR_MODULE)
+    assert tuple(sys.path) == path_before, "chargement FCR a modifié sys.path"
+    assert Path(bc.fcr.__file__).resolve() == bc.FCR_MODULE.resolve()
+    assert Path(isolated_fcr.__file__).resolve() == bc.FCR_MODULE.resolve()
+    with tempfile.TemporaryDirectory() as tmp:
+        broken = Path(tmp) / "format_card_registry.py"
+        broken.write_text("raise RuntimeError('fixture import failure')\n", encoding="utf-8")
+        try:
+            bc._load_fcr_module(broken)
+        except ImportError as exc:
+            assert str(broken) in str(exc)
+            assert isinstance(exc.__cause__, RuntimeError)
+        else:
+            raise AssertionError("un module FCR non importable doit lever ImportError")
+
     target_s, shot_s = sc.load_sot()
     brief = bc.compile_brief("neon_psycho")
 
@@ -301,7 +320,7 @@ def _test_cards_fixtures():
     # comptée comme invalide/dupliquée, pas comme valide. inspect_file() ne
     # lit qu'un fichier réel -> on écrit un fichier temporaire pour rester sur
     # la surface publique du module partagé (pas de logique dupliquée ici).
-    import format_card_registry as fcr
+    fcr = bc.fcr
 
     dup_text = _card() + "\n" + _card(hook="question")
     with tempfile.TemporaryDirectory() as tmp:

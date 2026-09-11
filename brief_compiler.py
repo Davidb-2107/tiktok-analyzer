@@ -18,6 +18,7 @@ Self-check : python test_brief_compiler.py
 """
 
 import argparse
+import importlib.util
 import json
 import math
 import re
@@ -46,10 +47,35 @@ if not FCR_MODULE.is_file():
         "La validation des cards ne peut pas continuer ; vérifiez que le module "
         "du vault Projects/Sourcing/tools est présent."
     )
-sys.path.insert(0, str(FCR_TOOLS))
+
+
+def _load_fcr_module(module_path):
+    """Load the configured FORMAT CARD registry without changing sys.path."""
+    spec = importlib.util.spec_from_file_location(
+        "_vault_format_card_registry", module_path
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(
+            "Impossible de construire le chargeur du validateur FORMAT CARD. "
+            f"Chemin attendu : {module_path}"
+        )
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        raise ImportError(
+            "Impossible d'importer le validateur FORMAT CARD du vault. "
+            f"Chemin attendu : {module_path} ; contexte : brief_compiler.py "
+            "en dépend pour inspecter et valider les cards, sans fallback silencieux."
+        ) from exc
+    return module
+
+
 try:
-    import format_card_registry as fcr
-except ImportError as exc:
+    fcr = _load_fcr_module(FCR_MODULE)
+except ImportError:
+    raise
+except Exception as exc:
     raise ImportError(
         "Impossible d'importer le validateur FORMAT CARD du vault. "
         f"Chemin attendu : {FCR_MODULE} ; contexte : brief_compiler.py "
