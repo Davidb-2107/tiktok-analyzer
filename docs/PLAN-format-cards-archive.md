@@ -58,7 +58,7 @@
 5. Le mode strict échoue si une card manque, est dupliquée, contient un champ inconnu ou si aucune modalité ne représente au moins deux tiers des cards. Cette dernière règle empêche de faire passer une niche multi-format pour un format unique.
 6. Le backfill complète uniquement les cards absentes. Il ne relance pas une skill LLM depuis Python et ne remplace pas une card existante sans `--replace` explicite.
 7. `blocked_source_unavailable` est un statut source explicite : il est accepté par les vérificateurs du registre/backfill, mais compte toujours dans le total analyzer et n'est jamais traité comme une card valide. Le mode analyzer `--strict` reste en échec explicite tant que cette vidéo ne peut pas être analysée.
-8. Une niche multi-chaînes se compile par chaîne exacte (`--channel`) : le registre, les FORMAT CARDs, la CHANNEL FORMULA et le brief restent dans ce même périmètre. Une compilation agrégée sans chaîne est refusée ; aucune formula partielle n'est choisie.
+8. Une niche multi-chaînes se compile par chaîne exacte (`--channel`) : le registre, les FORMAT CARDs, la CHANNEL FORMULA et le brief restent dans ce même périmètre. Une compilation agrégée sans chaîne est refusée ; aucune formula partielle n'est choisie. `source.channel`, `format_card_ref` et `channel_formula_ref` rendent chaque brief auto-descriptif et qualifié par chaîne ; aucun style de projet n'est inféré avant cette analyse, car le style peut différer par chaîne.
 9. Décision Tâche 6 (2026-09-11) : conserver la sémantique canonique actuelle de `Realism` (`1 = footage réel`, `5 = animé/stylisé`). L'option future d'une échelle inversée photoréaliste devra faire l'objet d'une migration explicite des cards et des consommateurs ; elle n'est pas appliquée maintenant.
 10. État Tâche 6 (2026-09-11) : les candidats de sous-clusters sont documentés dans le vault, mais aucun mapping canonique n'alimente encore un routage `--cluster`. `legacy/brief_neon_psycho.json` reste un artefact historique non-production ; les briefs suffixés par chaîne sont les sorties actuelles.
 
@@ -208,6 +208,7 @@ python Projects/Sourcing/tools/backfill_cards.py --niche dark_psycho --verify
 
 - [x] Vérifier que `neon_psycho` possède 10/10 cards valides et que `dark_psycho` possède 7/8 cards valides, avec une source explicitement bloquée (`blocked_source_unavailable`) sans card inventée.
 - [x] Séparer les compilations `neon_psycho` par chaîne (`--channel`) ; la séparation est implémentée et vérifiée, l'agrégat multi-chaînes est refusé et une `channel_formula_ref` est vérifiée par chaîne.
+- [x] Documenter `tests/fixtures/vault/` comme fixture Analyzer uniquement, jamais comme second vault de production.
 - [ ] Différer le routage `--cluster` : aucun mapping canonique de sous-formula n'existe. Les candidats `virald` et `wise` sont documentés dans le worktree vault, mais ne sont pas encore des formulas de production.
 - [x] Conserver `Realism` selon le contrat canonique actuel ; noter l'option d'échelle inversée comme migration future uniquement.
 - [x] Rendre le warning permissif compatible avec les consoles Windows `cp1252` ; conserver le symbole Unicode hors du chemin d'affichage.

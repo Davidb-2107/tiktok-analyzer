@@ -100,6 +100,13 @@ Artefacts : `brief.schema.json` (contrat), `brief_compiler.py` (compilateur),
 `brief_neon_psycho_<channel>.json` (briefs channel-scoped générés) ;
 `legacy/brief_neon_psycho.json` (artefact agrégé historique, non-production).
 
+Le vault reste l'unique source de production. `tests/fixtures/vault/` ne contient
+que des données de test. Chaque brief identifie sa chaîne dans `source.channel`
+et cite des références auto-descriptives et qualifiées par chaîne :
+`format_card_ref` et `channel_formula_ref`. Aucun style, réalisme, hook ou formula
+de projet n'est inféré avant l'analyse de la chaîne sélectionnée : les styles peuvent
+différer d'une chaîne à l'autre.
+
 ## 5. Verdict v1 (honnête, testé sur un gagnant @viraldtoprw)
 
 **Gain réel mais borné.**
@@ -126,9 +133,11 @@ contenu. Proposition étroite mais plus défendable que toute la catégorie B.
   le statut explicite `blocked_source_unavailable`. Le mode `--strict` échoue
   donc encore pour deux raisons distinctes et non résolues : homogénéité
   insuffisante pour `neon_psycho`, couverture bloquée pour `dark_psycho`.
-  **Prochaine étape** : décider si `neon_psycho` doit être scindé en
-  clusters/formulas, et récupérer ou remplacer la source bloquée de
+  **Prochaine étape** : récupérer ou remplacer la source bloquée de
   `dark_psycho` avant de re-générer les briefs stricts.
+- `--cluster` reste différé : il exige d'abord un mapping canonique
+  vidéo → sous-formula. Il n'existe pas de formula `neon_psycho` partagée
+  prête pour la production.
 - **Questions ouvertes non résolues** : (1) Viral Finder/ViralDecode font-ils déjà
   de la prosodie sous le capot sans l'annoncer ? Si oui, le dernier moat tombe.
   (2) Voie d'accès *autorisée* aux données (Research API, contenu uploadé par
