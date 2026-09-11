@@ -115,19 +115,19 @@ contenu. Proposition étroite mais plus défendable que toute la catégorie B.
 
 ## 6. Dette & prochaines étapes
 
-- **Dette amont — tooling livré, backfill en attente** : le contrat de validation
+- **Dette amont — tooling livré, couverture presque complète** : le contrat de validation
   des FORMAT CARDs (`Projects/Sourcing/tools/format_card_registry.py` dans le
   vault) et le compilateur conscient de la couverture
   (`inspect_cards`/`parse_cards`/`compile_brief(..., strict=True)` dans
-  `brief_compiler.py`) sont livrés et testés. Mais la dette taxonomique n'est
-  **pas résolue** : `neon_psycho` n'a que 5/10 vidéos avec une card valide,
-  `dark_psycho` 0/8 — le compilateur tourne donc encore en fallback mots-clés
-  sur les deux niches, et `--strict` échoue sur les deux tant que le backfill
-  n'a pas couvert les 13 vidéos restantes (worklist réelle :
-  `python Projects/Sourcing/tools/backfill_cards.py --niche <niche> --check`).
-  **Prochaine étape** : lancer les batchs manuels `/extract-format` sur ces 13
-  vidéos (aucune automatisation LLM implicite dans le worklist par design),
-  puis re-régénérer les briefs en mode strict.
+  `brief_compiler.py`) sont livrés et testés. `neon_psycho` a désormais 10/10
+  cards valides, mais reste hétérogène : sa majorité de hook est sous le seuil
+  des deux tiers. `dark_psycho` a 7/8 cards valides ; la huitième source porte
+  le statut explicite `blocked_source_unavailable`. Le mode `--strict` échoue
+  donc encore pour deux raisons distinctes et non résolues : homogénéité
+  insuffisante pour `neon_psycho`, couverture bloquée pour `dark_psycho`.
+  **Prochaine étape** : décider si `neon_psycho` doit être scindé en
+  clusters/formulas, et récupérer ou remplacer la source bloquée de
+  `dark_psycho` avant de re-générer les briefs stricts.
 - **Questions ouvertes non résolues** : (1) Viral Finder/ViralDecode font-ils déjà
   de la prosodie sous le capot sans l'annoncer ? Si oui, le dernier moat tombe.
   (2) Voie d'accès *autorisée* aux données (Research API, contenu uploadé par

@@ -127,6 +127,9 @@ def main():
     # --- inspect_cards / parse_cards : fixtures en mémoire -------------------
     _test_cards_fixtures()
 
+    # --- strict : cas synthétiques, indépendants du registre réel ------------
+    _test_strict_synthetic_cases()
+
     # --- permissif vs strict --------------------------------------------------
     _test_strict_vs_permissive(brief, card_report)
 
@@ -227,6 +230,57 @@ def _test_cards_fixtures():
         {"video_id": "v3", "card": _card(hook="question")},
     ]
     assert bc.parse_cards(complete) == ("AI animation", 5, "text-tease")
+
+    # Valeurs canoniques absentes de l'ancien fixture CI réduit.
+    divergent_values = bc.inspect_cards(
+        [
+            {
+                "video_id": "canonical-values",
+                "card": _card(
+                    style="POV skit", realism="4", hook="direct address"
+                ),
+            }
+        ]
+    )
+    assert divergent_values["n_valid"] == 1, divergent_values["errors"]
+    assert divergent_values["majority"] == {
+        "style": "POV skit",
+        "realism": 4,
+        "hook_mechanic": "direct address",
+    }
+
+    # Chaque label requis est unique : une seconde occurrence contradictoire
+    # invalide la card au lieu de laisser gagner la première occurrence.
+    base = _card(style="POV skit", realism="4", hook="direct address")
+    duplicate_cases = (
+        (
+            "Video style",
+            base.replace(
+                "- **Video style:** POV skit",
+                "- **Video style:** POV skit\n- **Video style:** talking head",
+            ),
+        ),
+        (
+            "Hook mechanic",
+            base.replace(
+                "- **Hook mechanic:** direct address",
+                "- **Hook mechanic:** direct address\n- **Hook mechanic:** question",
+            ),
+        ),
+        (
+            "Realism",
+            base.replace(
+                "- **Realism:** 4 — fully animated wireframe",
+                "- **Realism:** 4 — fully animated wireframe\n- **Realism:** 1",
+            ),
+        ),
+    )
+    for label, card in duplicate_cases:
+        duplicate = bc.inspect_cards([{"video_id": label, "card": card}])
+        assert duplicate["n_valid"] == 0
+        assert duplicate["errors"] == [
+            {"video_id": label, "error": f"duplicate field: {label}"}
+        ]
 
     # Niche partielle : au moins une vidéo sans card -> parse_cards -> None.
     partial_missing = [
@@ -349,6 +403,70 @@ def _test_cards_fixtures():
     assert len(trap_report["errors"]) == 1
     assert trap_report["errors"][0]["video_id"] == "trap"
     assert trap_report["errors"][0]["error"]
+
+
+def _strict_error(videos, report):
+    try:
+        bc._enforce_strict_cards("synthetic", videos, report)
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _test_strict_synthetic_cases():
+    partial = [
+        {"video_id": "valid", "ref": "synthetic/valid.md", "card": _card()},
+        {"video_id": "missing", "ref": "synthetic/missing.md", "card": ""},
+    ]
+    partial_error = _strict_error(partial, bc.inspect_cards(partial))
+    assert partial_error is not None
+    assert "synthetic/missing.md: missing FORMAT CARD" in partial_error
+
+    blocked = [
+        {
+            "video_id": "blocked",
+            "ref": "synthetic/blocked.md",
+            "card_inspect": {
+                "n_sections": 0,
+                "valid": False,
+                "errors": ["no FORMAT CARD section found"],
+                "card": None,
+                "format_card_status": "blocked_source_unavailable",
+            },
+        }
+    ]
+    blocked_error = _strict_error(blocked, bc.inspect_cards(blocked))
+    assert blocked_error is not None
+    assert "synthetic/blocked.md: blocked_source_unavailable" in blocked_error
+
+    under_two_thirds = [
+        {"video_id": "under-1", "card": _card()},
+        {"video_id": "under-2", "card": _card()},
+        {"video_id": "under-3", "card": _card()},
+        {
+            "video_id": "under-4",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+        {
+            "video_id": "under-5",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+    ]
+    under_error = _strict_error(
+        under_two_thirds, bc.inspect_cards(under_two_thirds)
+    )
+    assert under_error is not None
+    assert "majorité < 2/3 pour: style, realism, hook_mechanic" in under_error
+
+    exact_two_thirds = [
+        {"video_id": "boundary-1", "card": _card()},
+        {"video_id": "boundary-2", "card": _card()},
+        {
+            "video_id": "boundary-3",
+            "card": _card(style="talking head", realism="1", hook="question"),
+        },
+    ]
+    assert _strict_error(exact_two_thirds, bc.inspect_cards(exact_two_thirds)) is None
 
 
 def _test_strict_vs_permissive(brief, card_report):

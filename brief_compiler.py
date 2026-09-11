@@ -499,6 +499,35 @@ def compile_brief(niche, voice=None, language="fr", strict=False):
     return brief
 
 
+def _enforce_strict_cards(niche, videos, card_report):
+    """Raise when coverage, validity, or majority violates strict mode."""
+    ref_by_id = {
+        v["video_id"]: v.get("ref", v["video_id"])
+        for v in videos
+    }
+    problems = [
+        f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
+        for e in card_report["errors"]
+    ]
+    problems.extend(
+        f"{ref_by_id.get(entry['video_id'], entry['video_id'])}: {entry['status']}"
+        for entry in card_report.get("blocked", [])
+    )
+    if card_report["n_valid"] > 0:
+        low = [
+            field
+            for field, share in card_report["majority_share"].items()
+            if share < 2 / 3
+        ]
+        if low:
+            problems.append(f"majorité < 2/3 pour: {', '.join(low)}")
+    if problems:
+        raise ValueError(
+            f"[{niche}] --strict : couverture/validité/majorité des FORMAT "
+            "CARDs insuffisante:\n  " + "\n  ".join(problems)
+        )
+
+
 def _compile_brief_full(niche, voice=None, language="fr", strict=False):
     """Comme compile_brief, mais retourne aussi le card_report déjà calculé en
     interne — évite à main() de relire le registre + rappeler inspect_cards()
@@ -527,28 +556,7 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False):
         )
 
     if strict:
-        ref_by_id = {v["video_id"]: v["ref"] for v in videos}
-        problems = [
-            f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
-            for e in card_report["errors"]
-        ]
-        problems.extend(
-            f"{ref_by_id.get(entry['video_id'], entry['video_id'])}: {entry['status']}"
-            for entry in card_report.get("blocked", [])
-        )
-        if card_report["n_valid"] > 0:
-            low = [
-                field
-                for field, share in card_report["majority_share"].items()
-                if share < 2 / 3
-            ]
-            if low:
-                problems.append(f"majorité < 2/3 pour: {', '.join(low)}")
-        if problems:
-            raise ValueError(
-                f"[{niche}] --strict : couverture/validité/majorité des FORMAT "
-                "CARDs insuffisante:\n  " + "\n  ".join(problems)
-            )
+        _enforce_strict_cards(niche, videos, card_report)
 
     frames_dir = FRAMES / niche
     if frames_dir.is_dir():
