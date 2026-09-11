@@ -12,7 +12,6 @@ import tempfile
 import sys
 from pathlib import Path
 
-import brief_compiler as bc
 import brief_selfcheck as sc
 
 
@@ -20,6 +19,9 @@ def main():
     # Import isolé : le compilateur doit charger le fichier configuré par
     # chemin explicite, sans ajouter le dossier du vault à sys.path.
     path_before = tuple(sys.path)
+    global bc
+    import brief_compiler as bc
+
     isolated_fcr = bc._load_fcr_module(bc.FCR_MODULE)
     assert tuple(sys.path) == path_before, "chargement FCR a modifié sys.path"
     assert Path(bc.fcr.__file__).resolve() == bc.FCR_MODULE.resolve()
