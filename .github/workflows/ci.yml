@@ -46,7 +46,7 @@ jobs:
         env:
           VAULT_DIR: ${{ github.workspace }}/tests/fixtures/vault
         run: |
-          for channel in @fixture_a @fixture_b; do
+          for channel in @ci @fixture_b; do
             FORMAT_CARD_TEST_CHANNEL="$channel" python -B test_brief_compiler.py
           done
           python -B brief_selfcheck.py

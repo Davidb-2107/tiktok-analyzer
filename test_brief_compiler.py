@@ -170,11 +170,11 @@ def _card(style="AI animation", realism="5", hook="text-tease"):
 
 
 def _test_channel_formula_routing(channel):
-    fixture_a = bc.load_registry("neon_psycho", channel="@fixture_a")
+    ci = bc.load_registry("neon_psycho", channel="@ci")
     fixture_b = bc.load_registry("neon_psycho", channel="@fixture_b")
-    assert {v["channel"] for v in fixture_a} == {"@fixture_a"}
+    assert {v["channel"] for v in ci} == {"@ci"}
     assert {v["channel"] for v in fixture_b} == {"@fixture_b"}
-    assert all("/fixture_a/" in v["ref"] for v in fixture_a)
+    assert all("/ci/" in v["ref"] for v in ci)
     assert all("/fixture_b/" in v["ref"] for v in fixture_b)
     try:
         bc.load_registry("neon_psycho")
@@ -183,35 +183,35 @@ def _test_channel_formula_routing(channel):
     else:
         raise AssertionError("un registre multi-chaînes doit exiger --channel")
     try:
-        bc.load_registry("neon_psycho", channel="fixture_a")
+        bc.load_registry("neon_psycho", channel="ci")
     except ValueError as exc:
         assert "non canonique" in str(exc)
     else:
         raise AssertionError("une chaîne sans @ doit être rejetée")
 
-    brief_a = bc.compile_brief("neon_psycho", channel="@fixture_a")
+    brief_ci = bc.compile_brief("neon_psycho", channel="@ci")
     brief_b = bc.compile_brief("neon_psycho", channel="@fixture_b")
-    assert brief_a["source"]["channel"] == "@fixture_a"
+    assert brief_ci["source"]["channel"] == "@ci"
     assert brief_b["source"]["channel"] == "@fixture_b"
-    assert "/fixture_a/" in brief_a["source"]["format_card_ref"]
+    assert "/ci/" in brief_ci["source"]["format_card_ref"]
     assert "/fixture_b/" in brief_b["source"]["format_card_ref"]
-    assert "/fixture_a" in brief_a["source"]["channel_formula_ref"]
+    assert "/ci" in brief_ci["source"]["channel_formula_ref"]
     assert "/fixture_b" in brief_b["source"]["channel_formula_ref"]
     assert (
-        brief_a["format"]["style"],
-        brief_a["format"]["hook_mechanic"],
-        brief_a["format"]["realism"],
-    ) == ("AI animation", "text-tease", 5), brief_a["format"]
+        brief_ci["format"]["style"],
+        brief_ci["format"]["hook_mechanic"],
+        brief_ci["format"]["realism"],
+    ) == ("AI animation", "text-tease", 5), brief_ci["format"]
     assert (
         brief_b["format"]["style"],
         brief_b["format"]["hook_mechanic"],
         brief_b["format"]["realism"],
     ) == ("POV skit", "question", 2), brief_b["format"]
-    assert brief_a["format"]["constant"]["camera"] == "virtual AI close-up"
+    assert brief_ci["format"]["constant"]["camera"] == "virtual AI close-up"
     assert brief_b["format"]["constant"]["camera"] == "handheld POV reaction"
     assert all("ci/vault" not in ref for ref in (
-        brief_a["source"]["format_card_ref"],
-        brief_a["source"]["channel_formula_ref"],
+        brief_ci["source"]["format_card_ref"],
+        brief_ci["source"]["channel_formula_ref"],
         brief_b["source"]["format_card_ref"],
         brief_b["source"]["channel_formula_ref"],
     ))
