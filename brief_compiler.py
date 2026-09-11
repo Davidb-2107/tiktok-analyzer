@@ -177,7 +177,13 @@ def find_formula(videos):
     for f in sorted((FORMATS / videos[0].get("niche", "")).glob("*.md")):
         text = f.read_text(encoding="utf-8")
         formula_channel = parse_frontmatter(text)[0].get("channel", "")
-        if _channel_slug(formula_channel) != _channel_slug(channel):
+        formula_slug = _channel_slug(formula_channel)
+        if f.stem != formula_slug:
+            raise ValueError(
+                f"[{videos[0]['niche']}] chaîne/fichier formula incohérents: {f} "
+                f"(attendu: {formula_slug}.md)"
+            )
+        if formula_slug != _channel_slug(channel):
             continue
         formula_ids = set(re.findall(r"(?<!\d)\d{18,20}(?!\d)", text))
         if ids <= formula_ids:

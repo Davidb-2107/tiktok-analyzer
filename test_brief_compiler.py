@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import brief_selfcheck as sc
@@ -156,6 +157,7 @@ def main():
 
     # --- routage multi-chaînes : une formula par chaîne ----------------------
     _test_channel_formula_routing(channel)
+    _test_arbitrary_channel_routing()
 
     # --- console Windows cp1252 : warning permissif --------------------------
     _test_cp1252_warning()
@@ -233,6 +235,218 @@ def _test_channel_formula_routing(channel):
         brief_b["source"]["format_card_ref"],
         brief_b["source"]["channel_formula_ref"],
     ))
+
+
+def _write_channel_fixture(vault, niche, channel, video_ids, style, realism, hook):
+    slug = channel[1:]
+    transcripts = vault / "Projects" / "Sourcing" / "transcripts" / niche / slug
+    transcripts.mkdir(parents=True, exist_ok=True)
+    for video_id in video_ids:
+        (transcripts / f"{video_id}.md").write_text(
+            "---\n"
+            f"video_url: https://www.tiktok.com/{channel}/video/{video_id}\n"
+            f'channel: "{channel}"\n'
+            "title: Synthetic channel fixture\n"
+            "views: 1\n"
+            "---\n\n"
+            "## Transcript\n\n"
+            "Synthetic transcript.\n\n"
+            f"## FORMAT CARD — {channel} — synthetic\n"
+            f"- **Hook mechanic:** {hook}\n"
+            f"- **Video style:** {style}\n"
+            f"- **Realism:** {realism} — synthetic fixture\n",
+            encoding="utf-8",
+        )
+    formula = vault / "Projects" / "Sourcing" / "formats" / niche / f"{slug}.md"
+    formula.parent.mkdir(parents=True, exist_ok=True)
+    formula.write_text(
+        "---\n"
+        f'channel: "{channel}"\n'
+        f"videos: {', '.join(video_ids)}\n"
+        "---\n\n"
+        "## Constant\n"
+        f"- **camera**: {slug} camera\n"
+        "- **cta**: follow\n\n"
+        "## Slots variables\n"
+        "- topic\n"
+        "- audience\n\n"
+        "## Hook template\n"
+        "```\n"
+        f"{hook} {slug}\n"
+        "```\n",
+        encoding="utf-8",
+    )
+    return formula
+
+
+@contextmanager
+def _temporary_channel_vault():
+    with tempfile.TemporaryDirectory() as tmp:
+        vault = Path(tmp)
+        original = {
+            "vault": sc.VAULT,
+            "transcripts": bc.TRANSCRIPTS,
+            "formats": bc.FORMATS,
+            "frames": bc.FRAMES,
+            "engine_facts": bc.ENGINE_FACTS,
+            "voice_cal": bc.VOICE_CAL,
+            "load_sot": sc.load_sot,
+            "load_voice": bc.load_voice,
+            "engine_provenance": bc.engine_provenance,
+        }
+        sc.VAULT = vault
+        bc.TRANSCRIPTS = vault / "Projects" / "Sourcing" / "transcripts"
+        bc.FORMATS = vault / "Projects" / "Sourcing" / "formats"
+        bc.FRAMES = vault / "Projects" / "Sourcing" / "frames"
+        bc.ENGINE_FACTS = vault / "Shared" / "ENGINE-FACTS.md"
+        bc.VOICE_CAL = vault / "Shared" / "voice-calibration"
+        sc.load_sot = lambda: ([62.0, 75.0], [1.5, 4.0])
+        bc.load_voice = lambda *_: ("fixture_voice", 200.0, "fixture")
+        bc.engine_provenance = lambda _: None
+        try:
+            yield vault
+        finally:
+            sc.VAULT = original["vault"]
+            bc.TRANSCRIPTS = original["transcripts"]
+            bc.FORMATS = original["formats"]
+            bc.FRAMES = original["frames"]
+            bc.ENGINE_FACTS = original["engine_facts"]
+            bc.VOICE_CAL = original["voice_cal"]
+            sc.load_sot = original["load_sot"]
+            bc.load_voice = original["load_voice"]
+            bc.engine_provenance = original["engine_provenance"]
+
+
+def _expect_value_error(action, message):
+    try:
+        action()
+    except ValueError as exc:
+        assert message in str(exc), str(exc)
+    else:
+        raise AssertionError(message)
+
+
+def _test_arbitrary_channel_routing():
+    niche = "four_channels"
+    channels = (
+        ("@alpha", "111111111111111111", "AI animation", 5, "text-tease"),
+        ("@beta", "222222222222222222", "POV skit", 2, "question"),
+        ("@gamma", "333333333333333333", "talking head", 1, "direct address"),
+        ("@delta", "444444444444444444", "b-roll + voiceover", 3, "curiosity gap"),
+    )
+    with _temporary_channel_vault() as vault:
+        formulas = {}
+        for channel, video_id, style, realism, hook in channels:
+            formulas[channel] = _write_channel_fixture(
+                vault, niche, channel, [video_id], style, realism, hook
+            )
+
+        for channel, _, _, _, _ in channels:
+            registry = bc.load_registry(niche, channel=channel)
+            assert {v["channel"] for v in registry} == {channel}
+            assert len(registry) == 1
+            assert all(f"/{channel[1:]}/" in v["ref"] for v in registry)
+
+        _expect_value_error(lambda: bc.load_registry(niche), "utilisez --channel")
+        _expect_value_error(lambda: bc.load_registry(niche), "@alpha")
+        _expect_value_error(lambda: bc.compile_brief(niche), "utilisez --channel")
+        _expect_value_error(
+            lambda: bc.load_registry(niche, channel="@Alpha"), "non canonique"
+        )
+        _expect_value_error(
+            lambda: bc.load_registry(niche, channel="alpha"), "non canonique"
+        )
+        _expect_value_error(
+            lambda: bc.load_registry(niche, channel="@unknown"), "chaîne introuvable"
+        )
+
+        alpha = bc.compile_brief(niche, channel="@alpha")
+        beta = bc.compile_brief(niche, channel="@beta")
+        assert alpha["source"]["channel"] == "@alpha"
+        assert beta["source"]["channel"] == "@beta"
+        assert (alpha["format"]["style"], alpha["format"]["realism"], alpha["format"]["hook_mechanic"]) == (
+            "AI animation", 5, "text-tease"
+        )
+        assert (beta["format"]["style"], beta["format"]["realism"], beta["format"]["hook_mechanic"]) == (
+            "POV skit", 2, "question"
+        )
+        for brief, channel in ((alpha, "@alpha"), (beta, "@beta")):
+            slug = channel[1:]
+            assert f"/{slug}/" in brief["source"]["format_card_ref"]
+            assert brief["source"]["channel_formula_ref"].endswith(f"/{slug}.md")
+            assert all(f"/{slug}/" in v["ref"] for v in bc.load_registry(niche, channel=channel))
+
+        mismatched_card = (
+            vault / "Projects" / "Sourcing" / "transcripts" / niche / "wrong" / "555555555555555555.md"
+        )
+        mismatched_card.parent.mkdir()
+        mismatched_card.write_text(
+            "---\nvideo_url: https://www.tiktok.com/@alpha/video/555555555555555555\n"
+            'channel: "@alpha"\n---\n', encoding="utf-8"
+        )
+        _expect_value_error(
+            lambda: bc.load_registry(niche, channel="@alpha"), "incohérents"
+        )
+        mismatched_card.unlink()
+
+        missing_channel_card = (
+            vault / "Projects" / "Sourcing" / "transcripts" / niche / "alpha" / "666666666666666666.md"
+        )
+        missing_channel_card.write_text(
+            "---\nvideo_url: https://www.tiktok.com/@alpha/video/666666666666666666\n---\n",
+            encoding="utf-8",
+        )
+        _expect_value_error(
+            lambda: bc.load_registry(niche, channel="@alpha"), "non canonique"
+        )
+        missing_channel_card.unlink()
+
+        missing_channel_formula = (
+            vault / "Projects" / "Sourcing" / "formats" / niche / "missing.md"
+        )
+        missing_channel_formula.write_text(
+            "---\nvideos: 111111111111111111\n---\n", encoding="utf-8"
+        )
+        _expect_value_error(
+            lambda: bc.find_formula(bc.load_registry(niche, channel="@alpha")),
+            "non canonique",
+        )
+        missing_channel_formula.unlink()
+
+        formulas["@alpha"].write_text(
+            formulas["@alpha"].read_text(encoding="utf-8").replace(
+                'channel: "@alpha"', 'channel: "@beta"'
+            ),
+            encoding="utf-8",
+        )
+        _expect_value_error(
+            lambda: bc.find_formula(bc.load_registry(niche, channel="@alpha")),
+            "incohérents",
+        )
+
+        partial_formula = _write_channel_fixture(
+            vault,
+            niche,
+            "@alpha",
+            ["111111111111111111"],
+            "AI animation",
+            5,
+            "text-tease",
+        ).read_text(encoding="utf-8")
+        _write_channel_fixture(
+            vault,
+            niche,
+            "@alpha",
+            ["111111111111111111", "777777777777777777"],
+            "AI animation",
+            5,
+            "text-tease",
+        )
+        formulas["@alpha"].write_text(partial_formula, encoding="utf-8")
+        _expect_value_error(
+            lambda: bc.find_formula(bc.load_registry(niche, channel="@alpha")),
+            "incomplète",
+        )
 
 
 def _test_cp1252_warning():
