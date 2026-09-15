@@ -203,6 +203,242 @@ def find_formula(videos):
     return None, None
 
 
+SUBFORMULA_MAPPING_HEADING = "Décision — mapping canonique vidéo → sous-formula"
+SUBFORMULA_MAPPING_COLUMNS = (
+    "Video ID",
+    "Chaîne",
+    "Video style",
+    "Realism",
+    "Hook mechanic",
+    "Angle / promesse",
+    "Progression → payoff",
+    "Affectation",
+)
+SUBFORMULA_ASSIGNMENTS = {"outlier", "outlier_no_formula"}
+
+
+def _mapping_row(line, line_number, mapping_path):
+    stripped = line.strip()
+    if not (stripped.startswith("|") and stripped.endswith("|")):
+        raise ValueError(
+            f"mapping row malformed in {mapping_path}:{line_number}: "
+            "expected a pipe-delimited Markdown row"
+        )
+    cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+    if len(cells) != len(SUBFORMULA_MAPPING_COLUMNS):
+        raise ValueError(
+            f"mapping row malformed in {mapping_path}:{line_number}: "
+            f"expected {len(SUBFORMULA_MAPPING_COLUMNS)} cells, got {len(cells)}"
+        )
+    if any(not cell for cell in cells):
+        raise ValueError(
+            f"mapping row malformed in {mapping_path}:{line_number}: empty cell"
+        )
+    return cells
+
+
+def _mapping_value(value):
+    value = value.strip()
+    if value.startswith("`") and value.endswith("`"):
+        value = value[1:-1].strip()
+    return value
+
+
+def _read_subformula_table(text, mapping_path):
+    heading = rf"^## {re.escape(SUBFORMULA_MAPPING_HEADING)}\s*$"
+    section_match = re.search(
+        heading + r"\n(.*?)(?=^## |\Z)",
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+    if not section_match:
+        raise ValueError(
+            f"approved subformula mapping table section missing in {mapping_path}: "
+            f"expected '## {SUBFORMULA_MAPPING_HEADING}'"
+        )
+
+    lines = section_match.group(1).splitlines()
+    header_indexes = []
+    for index, line in enumerate(lines):
+        if line.strip().startswith("|"):
+            cells = _mapping_row(line, index + 1, mapping_path)
+            if tuple(_mapping_value(cell) for cell in cells) == SUBFORMULA_MAPPING_COLUMNS:
+                header_indexes.append(index)
+    if len(header_indexes) != 1:
+        raise ValueError(
+            f"approved subformula mapping table missing or duplicated in {mapping_path}"
+        )
+
+    header_index = header_indexes[0]
+    separator_index = header_index + 1
+    if separator_index >= len(lines):
+        raise ValueError(f"mapping table malformed in {mapping_path}: missing separator")
+    separator = _mapping_row(lines[separator_index], separator_index + 1, mapping_path)
+    if any(not re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in separator):
+        raise ValueError(f"mapping table malformed in {mapping_path}: invalid separator")
+
+    rows = []
+    for index, line in enumerate(lines[separator_index + 1 :], separator_index + 2):
+        if not line.strip():
+            if rows:
+                break
+            continue
+        if "|" in line:
+            rows.append(_mapping_row(line, index, mapping_path))
+        elif rows:
+            break
+    if not rows:
+        raise ValueError(f"mapping table missing rows in {mapping_path}")
+    return rows
+
+
+def _subformula_assignment(value, mapping_path, line_number):
+    raw_value = value.strip()
+    if raw_value.startswith("`") and raw_value.endswith("`"):
+        raw_value = raw_value[1:-1].strip()
+    analysis_group_only = raw_value.endswith("*")
+    if analysis_group_only:
+        raw_value = raw_value[:-1].strip()
+    assignment = _mapping_value(raw_value)
+    if assignment in SUBFORMULA_ASSIGNMENTS:
+        if analysis_group_only:
+            raise ValueError(
+                f"unknown assignment status in {mapping_path}:{line_number}: {value!r}"
+            )
+        return assignment, "outlier"
+    if assignment == "analysis_group_only":
+        return assignment, "analysis_group_only"
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9_]*[a-z0-9])?", assignment):
+        raise ValueError(
+            f"unknown assignment status in {mapping_path}:{line_number}: {value!r}"
+        )
+    return assignment, "analysis_group_only" if analysis_group_only else "assigned"
+
+
+def _mapping_path(ref):
+    if not isinstance(ref, str) or not ref.strip():
+        raise ValueError("selected channel formula missing subformula_mapping_ref")
+    vault = sc.VAULT.resolve()
+    path = (vault / ref).resolve()
+    try:
+        path.relative_to(vault)
+    except ValueError as exc:
+        raise ValueError(
+            f"subformula_mapping_ref escapes configured Vault: {ref!r}"
+        ) from exc
+    if not path.is_file():
+        raise ValueError(f"subformula mapping file missing: {path}")
+    return path
+
+
+def load_subformula_mapping(videos):
+    """Load the approved mapping for one already channel-scoped selection.
+
+    The referenced note's complete table is validated before rows for the
+    selected channel are returned. Other-channel rows are valid parts of the
+    shared canonical note, but can never satisfy a selected channel's videos.
+    """
+    if not videos:
+        raise ValueError("subformula mapping requires a non-empty channel selection")
+    channels = {video.get("channel") for video in videos}
+    if len(channels) != 1:
+        raise ValueError("subformula mapping requires exactly one selected channel")
+    channel = channels.pop()
+    _channel_slug(channel)
+    niches = {video.get("niche") for video in videos}
+    if len(niches) != 1 or None in niches:
+        raise ValueError("subformula mapping requires exactly one selected niche")
+    niche = niches.pop()
+
+    formula_path, formula_text = find_formula(videos)
+    if formula_path is None:
+        raise ValueError(
+            f"[{niche}] CHANNEL FORMULA introuvable for selected channel {channel}"
+        )
+    formula_meta, _ = parse_frontmatter(formula_text)
+    mapping_path = _mapping_path(formula_meta.get("subformula_mapping_ref"))
+    mapping_text = mapping_path.read_text(encoding="utf-8")
+    mapping_meta, _ = parse_frontmatter(mapping_text)
+    if mapping_meta.get("niche") != niche:
+        raise ValueError(
+            f"subformula mapping niche mismatch in {mapping_path}: "
+            f"expected {niche!r}, got {mapping_meta.get('niche')!r}"
+        )
+    rows = _read_subformula_table(mapping_text, mapping_path)
+
+    records = []
+    seen_ids = {}
+    for index, cells in enumerate(rows, 1):
+        video_id = _mapping_value(cells[0])
+        if not re.fullmatch(r"\d{18,20}", video_id):
+            raise ValueError(
+                f"mapping row malformed in {mapping_path}: invalid video ID {video_id!r}"
+            )
+        row_channel = _mapping_value(cells[1])
+        _channel_slug(row_channel)
+        assignment, status = _subformula_assignment(cells[7], mapping_path, index)
+        if video_id in seen_ids:
+            previous = seen_ids[video_id]
+            if previous["channel"] != row_channel:
+                raise ValueError(
+                    f"cross-channel video ID in {mapping_path}: {video_id} is mapped to "
+                    f"{previous['channel']} and {row_channel}"
+                )
+            raise ValueError(f"duplicate video ID in {mapping_path}: {video_id}")
+        record = {
+            "niche": niche,
+            "channel": row_channel,
+            "video_id": video_id,
+            "subformula_id": assignment,
+            "status": status,
+        }
+        records.append(record)
+        seen_ids[video_id] = record
+
+    expected_ids = [video["video_id"] for video in videos]
+    if len(set(expected_ids)) != len(expected_ids):
+        raise ValueError(f"duplicate selected video ID for {channel}: {expected_ids}")
+    selected = [record for record in records if record["channel"] == channel]
+    selected_ids = {record["video_id"] for record in selected}
+    expected_set = set(expected_ids)
+    foreign_selected = [
+        video_id
+        for video_id in expected_set
+        if video_id in seen_ids and seen_ids[video_id]["channel"] != channel
+    ]
+    if foreign_selected:
+        raise ValueError(
+            f"cross-channel mapping rows for selected channel {channel}: "
+            + ", ".join(sorted(foreign_selected))
+        )
+    missing = expected_set - selected_ids
+    extra = selected_ids - expected_set
+    if missing:
+        raise ValueError(
+            f"missing mapping rows for {niche}/{channel}: {', '.join(sorted(missing))}"
+        )
+    if extra:
+        raise ValueError(
+            f"unexpected mapping rows for {niche}/{channel}: {', '.join(sorted(extra))}"
+        )
+
+    counts = Counter(
+        (record["channel"], record["subformula_id"])
+        for record in records
+        if record["status"] != "outlier"
+    )
+    undersized = [
+        f"{group[0]}:{group[1]} ({count} video)"
+        for group, count in counts.items()
+        if count < 2
+    ]
+    if undersized:
+        raise ValueError(
+            f"subformula mapping groups require at least two videos: {', '.join(undersized)}"
+        )
+    return selected
+
+
 # --- formula -> champs format -------------------------------------------------
 def _slug(s):
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
