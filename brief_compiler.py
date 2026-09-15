@@ -102,21 +102,37 @@ def parse_frontmatter(text):
     return meta, text[end + 4 :]
 
 
+def _channel_slug(channel):
+    if not re.fullmatch(r"@[a-z0-9][a-z0-9._-]*", channel or ""):
+        raise ValueError(f"chaîne non canonique: {channel!r}; attendu: @handle")
+    return channel[1:]
+
+
 def load_registry(niche, channel=None):
     """Charge le registre, éventuellement limité à une chaîne exacte."""
     d = TRANSCRIPTS / niche
     assert d.is_dir(), f"registre introuvable: {d}"
+    if channel is not None:
+        _channel_slug(channel)
     videos = []
-    for f in sorted(d.glob("*.md")):
+    for f in sorted(d.rglob("*.md")):
         meta, body = parse_frontmatter(f.read_text(encoding="utf-8"))
         if "video_url" not in meta:  # fichier non-registre (AGENTS.md, notes...)
             continue
+        video_channel = meta.get("channel", "")
+        slug = _channel_slug(video_channel)
+        if f.parent.name != slug:
+            raise ValueError(
+                f"[{niche}] chaîne/répertoire incohérents: {f} "
+                f"(attendu sous {slug}/)"
+            )
         m = re.search(r"## Transcript.*?\n\n(.+?)(?:\n\n## |\Z)", body, re.DOTALL)
         videos.append(
             {
+                "niche": niche,
                 "video_id": f.stem,
                 "url": meta.get("video_url", ""),
-                "channel": meta.get("channel", ""),
+                "channel": video_channel,
                 "title": meta.get("title", ""),
                 "views": meta.get("views", 0),
                 "transcript": (m.group(1).strip() if m else ""),
@@ -128,7 +144,7 @@ def load_registry(niche, channel=None):
                 # n_sections/valid/errors/card (fields) -> inspect_cards() n'a plus
                 # besoin de reparser le texte via fcr.parse_card en double.
                 "card_inspect": fcr.inspect_file(f),
-                "ref": f"Projects/Sourcing/transcripts/{niche}/{f.name}",
+                "ref": f"Projects/Sourcing/transcripts/{niche}/{slug}/{f.name}",
             }
         )
     channels = sorted({v["channel"] for v in videos if v["channel"]})
@@ -150,11 +166,25 @@ def load_registry(niche, channel=None):
 
 def find_formula(videos):
     """Retrouve l'unique formula couvrant toute la sélection de vidéos."""
+    channels = {v.get("channel") for v in videos}
+    if len(channels) != 1:
+        raise ValueError("sélection multi-chaînes: utilisez --channel")
+    channel = channels.pop()
+    _channel_slug(channel)
     ids = {v["video_id"] for v in videos}
     candidates = []
     partial = []
-    for f in sorted(FORMATS.glob("*.md")):
+    for f in sorted((FORMATS / videos[0].get("niche", "")).glob("*.md")):
         text = f.read_text(encoding="utf-8")
+        formula_channel = parse_frontmatter(text)[0].get("channel", "")
+        formula_slug = _channel_slug(formula_channel)
+        if f.stem != formula_slug:
+            raise ValueError(
+                f"[{videos[0]['niche']}] chaîne/fichier formula incohérents: {f} "
+                f"(attendu: {formula_slug}.md)"
+            )
+        if formula_slug != _channel_slug(channel):
+            continue
         formula_ids = set(re.findall(r"(?<!\d)\d{18,20}(?!\d)", text))
         if ids <= formula_ids:
             candidates.append((f, text))
@@ -641,9 +671,10 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=
             },
         ]
     brief = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "niche": niche,
         "source": {
+            "channel": videos[0]["channel"],
             "videos": [
                 {k: v[k] for k in ("url", "video_id", "channel", "title", "views")}
                 for v in videos

@@ -13,6 +13,7 @@ diverge du SOT — c'est ce qui est asserté ici.
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -39,20 +40,21 @@ def example_brief(target_s, shot_s):
     """Brief d'exemple. Les gates sont REMPLIES depuis le SOT (jamais en dur) —
     c'est exactement ce que fera le compilateur format_card -> brief."""
     return {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "niche": "neon_psycho",
         "source": {
+            "channel": "@ci",
             "videos": [
                 {
-                    "url": "https://www.tiktok.com/@viraldtoprw/video/7568334048544820510",
-                    "video_id": "7568334048544820510",
-                    "channel": "@viraldtoprw",
+                    "url": "https://www.tiktok.com/@ci/video/1234567890123456789",
+                    "video_id": "1234567890123456789",
+                    "channel": "@ci",
                     "title": "Psychology fact",
                     "views": 53000000,
                 }
             ],
-            "format_card_ref": "Projects/Sourcing/transcripts/neon_psycho/7568334048544820510.md",
-            "channel_formula_ref": "Projects/Sourcing/transcripts/neon_psycho/_formula.md",
+            "format_card_ref": "Projects/Sourcing/transcripts/neon_psycho/ci/1234567890123456789.md",
+            "channel_formula_ref": "Projects/Sourcing/formats/neon_psycho/ci.md",
         },
         "format": {
             "style": "AI animation",
@@ -177,7 +179,11 @@ def validate_structure(b):
         "gates",
     ]
     check_required(b, "root", top)
-    assert b["schema_version"] == "0.1"
+    assert b["schema_version"] == "0.2"
+    check_required(b["source"], "source", ["channel", "videos"])
+    assert re.fullmatch(r"@[a-z0-9][a-z0-9._-]*", b["source"]["channel"]), (
+        "source.channel doit être un @handle canonique"
+    )
     check_required(
         b["format"],
         "format",
