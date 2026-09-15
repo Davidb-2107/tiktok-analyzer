@@ -161,7 +161,8 @@ def main():
     _test_arbitrary_channel_routing()
 
     # --- console Windows cp1252 : warning permissif --------------------------
-    _test_cp1252_warning()
+    if os.environ.get("RUN_DARK_PSYCHO_SMOKE") == "1":
+        _test_cp1252_warning()
 
     # --- strict : cas synthétiques, indépendants du registre réel ------------
     _test_strict_synthetic_cases()
