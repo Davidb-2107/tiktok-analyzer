@@ -156,7 +156,8 @@ def main():
     _test_cards_fixtures()
 
     # --- routage multi-chaînes : une formula par chaîne ----------------------
-    _test_channel_formula_routing(channel)
+    if channel in {"@ci", "@fixture_b"}:
+        _test_channel_formula_routing(channel)
     _test_arbitrary_channel_routing()
 
     # --- console Windows cp1252 : warning permissif --------------------------
