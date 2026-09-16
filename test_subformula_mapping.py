@@ -234,8 +234,23 @@ class SubformulaMappingTests(unittest.TestCase):
     def test_missing_exact_table_is_rejected(self):
         self.assert_load_error(
             [],
-            "table.*mapping|mapping.*table",
+            "exactly one canonical mapping section.*found 0",
             mapping="---\nniche: neon_psycho\n---\n\n## Other\n| not the approved table |\n",
+        )
+
+    def test_duplicate_canonical_sections_are_rejected(self):
+        rows = [
+            ("111111111111111111", "@alpha", "alpha_formula"),
+            ("222222222222222222", "@alpha", "alpha_formula"),
+        ]
+        conflicting_rows = [
+            ("111111111111111111", "@alpha", "conflicting_formula"),
+            ("222222222222222222", "@alpha", "conflicting_formula"),
+        ]
+        self.assert_load_error(
+            rows,
+            "exactly one canonical mapping section.*found 2",
+            mapping=_mapping(rows) + "\n" + _mapping(conflicting_rows),
         )
 
     def test_malformed_row_is_rejected(self):

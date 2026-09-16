@@ -246,16 +246,18 @@ def _mapping_value(value):
 
 def _read_subformula_table(text, mapping_path):
     heading = rf"^## {re.escape(SUBFORMULA_MAPPING_HEADING)}\s*$"
+    section_matches = list(re.finditer(heading, text, re.MULTILINE))
+    if len(section_matches) != 1:
+        raise ValueError(
+            "approved subformula mapping requires exactly one canonical mapping "
+            f"section in {mapping_path}; found {len(section_matches)} headings named "
+            f"'## {SUBFORMULA_MAPPING_HEADING}'"
+        )
     section_match = re.search(
         heading + r"\n(.*?)(?=^## |\Z)",
         text,
         re.DOTALL | re.MULTILINE,
     )
-    if not section_match:
-        raise ValueError(
-            f"approved subformula mapping table section missing in {mapping_path}: "
-            f"expected '## {SUBFORMULA_MAPPING_HEADING}'"
-        )
 
     lines = section_match.group(1).splitlines()
     header_indexes = []

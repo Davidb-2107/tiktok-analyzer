@@ -1,6 +1,6 @@
 ---
-statut: "Option B validée ; contrat métier de clustering défini au niveau conceptuel ; --cluster non implémenté"
-prochaine_action: "produire le mapping canonique vidéo → sous-formula à partir des cards de @the.wisejourney et @viraldtoprw, puis seulement implémenter --cluster"
+statut: "Option B validée ; --cluster implémenté par routage déterministe du mapping canonique, scoped par chaîne"
+prochaine_action: "utiliser --cluster avec --channel ; le mapping canonique approuvé est l'unique autorité de routage"
 maj: 2026-09-15
 ---
 

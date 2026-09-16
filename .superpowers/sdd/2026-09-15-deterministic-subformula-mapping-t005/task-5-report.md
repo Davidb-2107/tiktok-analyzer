@@ -43,3 +43,11 @@ content was changed.
 The CI backend command could not run in this desktop runtime because its bundled
 Python has no `pytest` module. The failure is documented here; no test or gate
 was skipped or weakened to conceal it.
+
+## Final-review fix
+
+- The canonical mapping parser now requires exactly one canonical section, so a
+  conflicting duplicate cannot be ignored. CONTEXT now describes the shipped,
+  mapping-driven `--cluster` behavior.
+- Tests: 23 `test_subformula_mapping.py` cases with the T001 Vault, plus
+  `test_brief_compiler.py`, `brief_selfcheck.py`, and `git diff --check` passed.
