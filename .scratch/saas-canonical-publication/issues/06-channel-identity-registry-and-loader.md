@@ -1,6 +1,6 @@
 # T006 — Implement channel identity allocation and declared partition checks
 
-Status: open
+Status: claimed
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T005
