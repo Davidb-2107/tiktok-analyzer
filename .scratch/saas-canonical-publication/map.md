@@ -27,11 +27,10 @@ contract and migration route, not the SaaS implementation itself.
 
 - [T005 — Harden the release gate and reconcile documentation](../deterministic-subformula-mapping/issues/005-release-gate-and-documentation.md): the current local gate fails closed when the canonical Vault mapping cannot be verified; it is a pre-SaaS safety gate, not the target runtime architecture.
 - [Decide the canonical publication boundary](issues/01-canonical-publication-boundary.md): publish one self-contained project snapshot, consume channel partitions by immutable identity, and embed versioned runtime taxonomy/provenance instead of relying on `VAULT_DIR`.
+- [Decide publication lifecycle and versioning](issues/02-publication-lifecycle-and-versioning.md): a Vault-approved revision is manually published by trusted CI to private immutable R2, consumed by pinned release ID, with separate public-synthetic and private-real verification regimes and exercised recovery.
 
 ## Not yet specified
 
-- Who/what is allowed to publish a Vault snapshot, which validations are
-  mandatory, and how versions, rollback, and provenance are represented.
 - How the Analyzer, CI, and future workers consume a published snapshot while
   retaining a local-development path during migration.
 - How `channel_id` is issued, how handle history is retained, and how stable

@@ -21,3 +21,8 @@ before claiming that local-Vault and published-snapshot compilation are
 identical. A test must compare all other JSON fields explicitly. Published
 artifact names must not depend on mutable handles, and the consumer must verify
 both the taxonomy semantic version and authoritative-module digest.
+
+The equivalence suite must also replace source transcript text with a poison
+sentinel and assert byte-identical output. A failure means the published
+payload boundary must be reopened. Backend transcript display is not a reason
+to add verbatim text to the Analyzer snapshot.
