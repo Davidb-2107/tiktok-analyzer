@@ -34,7 +34,11 @@ revision is part of T005 and must land before T009:
   normalized grammar `^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$`; `215.0`, `215`,
   and `215.00` therefore publish as `"215"`, and `1.5` as `"1.5"`. Both
   stored objects must already be canonical. Builders normalize from exact
-  decimal input, never binary floats.
+  decimal input, never binary floats. The declared payload paths are
+  `runtime.resolved_compilation_inputs.target_wpm` (scalar),
+  `runtime.resolved_compilation_inputs.target_duration_s[]`, and
+  `runtime.resolved_compilation_inputs.shot_duration_s[]`; payload validation
+  rejects non-canonical strings at those paths.
 - Versioned known-answer vectors are required for key order, NFC, numeric
   rejection/decimal strings, duplicate keys, and exact bytes.
 - Provenance names are exact: `vault_commit`, `builder_version`,

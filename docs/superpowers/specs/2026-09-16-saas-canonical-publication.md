@@ -107,6 +107,15 @@ for the existing brief output types; this internal representation does not
 change the brief schema. The output is compact UTF-8 JSON with no optional
 whitespace and no ASCII escaping beyond JSON-required escaping.
 
+The v1 payload declares these measured fields as `decimal-v1`:
+`runtime.resolved_compilation_inputs.target_wpm` (scalar),
+`runtime.resolved_compilation_inputs.target_duration_s` (array items), and
+`runtime.resolved_compilation_inputs.shot_duration_s` (array items). A payload
+that contains one of these fields must already contain the normalized string;
+the validator rejects `"215.00"` and `"215.0"` rather than silently rewriting
+them. The builder is responsible for supplying the fields when the source
+contains the corresponding resolved measurements.
+
 The canonicalization vectors are versioned with the implementation and are
 known-answer tests for Unicode normalization, key ordering, integer-vs-float
 rejection, decimal strings, duplicate keys, and exact output bytes. Both
