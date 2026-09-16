@@ -25,3 +25,9 @@ _refetch_*.py
 
 # Local isolated workspaces used by implementation plans.
 .worktrees/
+
+# Workflow-local SDD traces; durable specs, tickets, and task reports remain
+# versioned.
+.superpowers/sdd/**/progress.md
+.superpowers/sdd/**/review-*.diff
+.superpowers/sdd/**/re-review-*.diff
