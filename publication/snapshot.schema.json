@@ -1,5 +1,39 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "runtime": {
+      "type": "object",
+      "required": [
+        "taxonomy",
+        "channels",
+        "formulas",
+        "cards",
+        "mappings",
+        "resolved_compilation_inputs"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "required": ["runtime"],
+      "properties": {
+        "runtime": {"$ref": "#/$defs/runtime"}
+      },
+      "additionalProperties": false
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "vault_commit",
+        "builder_version",
+        "taxonomy_module_digest",
+        "module_digests",
+        "sot_versions",
+        "voice_profile_digest",
+        "identity_history",
+        "build_freshness"
+      ]
+    }
+  },
   "title": "Snapshot manifest v1",
   "type": "object",
   "required": [
@@ -10,7 +44,6 @@
     "project_id_scheme",
     "release_id",
     "payload_digest",
-    "runtime",
     "provenance"
   ],
   "properties": {
@@ -21,21 +54,7 @@
     "project_id_scheme": {"type": "string"},
     "release_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "payload_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "runtime": {
-      "type": "object",
-      "required": ["taxonomy", "channels", "formulas", "cards", "mappings", "resolved_compilation_inputs"]
-    },
-    "provenance": {
-      "type": "object",
-      "required": [
-        "vault_commit",
-        "builder_version",
-        "taxonomy_module_digest",
-        "module_digests",
-        "voice_profile_digest",
-        "identity_history",
-        "build_freshness"
-      ]
-    }
-  }
+    "provenance": {"$ref": "#/$defs/provenance"}
+  },
+  "additionalProperties": false
 }

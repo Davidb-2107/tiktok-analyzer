@@ -1,15 +1,27 @@
-"""Canonical snapshot-manifest validation and release identity."""
+"""Canonical snapshot manifests, payloads, and release verification."""
 
 import hashlib
 import json
 import re
+import unicodedata
 from collections.abc import Mapping
+from typing import Any
 
 
 _RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _SUPPORTED_SCHEMA_VERSION = 1
 _CANONICALIZATION_VERSION = "json-c14n-v1"
 _HASH_ALGORITHM = "sha256"
+_REQUIRED_MANIFEST_FIELDS = {
+    "schema_version",
+    "canonicalization_version",
+    "hash_algorithm",
+    "project_id",
+    "project_id_scheme",
+    "release_id",
+    "payload_digest",
+    "provenance",
+}
 _REQUIRED_RUNTIME_FIELDS = {
     "taxonomy",
     "channels",
@@ -23,6 +35,7 @@ _REQUIRED_PROVENANCE_FIELDS = {
     "builder_version",
     "taxonomy_module_digest",
     "module_digests",
+    "sot_versions",
     "voice_profile_digest",
     "identity_history",
     "build_freshness",
@@ -30,25 +43,19 @@ _REQUIRED_PROVENANCE_FIELDS = {
 
 
 def canonical_manifest_bytes(manifest: Mapping[str, object]) -> bytes:
-    """Return the versioned canonical JSON encoding for a manifest value."""
-    if not isinstance(manifest, Mapping):
-        raise ValueError("manifest must be a mapping")
-    try:
-        return json.dumps(
-            manifest,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"manifest is not canonical JSON: {error}") from error
+    """Return canonical json-c14n-v1 bytes for a manifest mapping."""
+    return _canonical_mapping(manifest)
+
+
+def canonical_payload_bytes(payload: Mapping[str, object]) -> bytes:
+    """Return canonical json-c14n-v1 bytes for the runtime-only payload."""
+    _validate_payload(payload)
+    return _canonical_mapping(payload)
 
 
 def payload_digest(payload: bytes) -> str:
-    """Return the canonical SHA-256 digest label for a snapshot payload."""
-    if not isinstance(payload, bytes):
-        raise ValueError("payload must be bytes")
+    """Return the SHA-256 digest of exact canonical payload.json bytes."""
+    _read_canonical_json(payload, "payload")
     return f"sha256:{hashlib.sha256(payload).hexdigest()}"
 
 
@@ -65,11 +72,14 @@ def verify_release(release_id: str, manifest: Mapping[str, object], payload: byt
     _validate_manifest(manifest)
     if not isinstance(release_id, str) or not _RELEASE_ID.fullmatch(release_id):
         raise ValueError("release ID is not canonical sha256:<lowercase-hex>")
+
     calculated_release_id = release_id_for(manifest)
     if release_id != calculated_release_id:
         raise ValueError("release ID does not match manifest")
     if manifest["release_id"] != calculated_release_id:
         raise ValueError("manifest release_id does not match manifest")
+
+    _read_canonical_json(payload, "payload")
     if manifest["payload_digest"] != payload_digest(payload):
         raise ValueError("payload digest does not match manifest")
 
@@ -77,21 +87,9 @@ def verify_release(release_id: str, manifest: Mapping[str, object], payload: byt
 def _validate_manifest(manifest: Mapping[str, object]) -> None:
     if not isinstance(manifest, Mapping):
         raise ValueError("manifest must be a mapping")
-    _require_fields(
-        manifest,
-        {
-            "schema_version",
-            "canonicalization_version",
-            "hash_algorithm",
-            "project_id",
-            "project_id_scheme",
-            "release_id",
-            "payload_digest",
-            "runtime",
-            "provenance",
-        },
-        "manifest",
-    )
+    if "runtime" in manifest:
+        raise ValueError("manifest must not duplicate runtime; use payload.json")
+    _require_fields(manifest, _REQUIRED_MANIFEST_FIELDS, "manifest")
     if manifest["schema_version"] != _SUPPORTED_SCHEMA_VERSION:
         raise ValueError(f"unsupported schema version: {manifest['schema_version']!r}")
     if manifest["canonicalization_version"] != _CANONICALIZATION_VERSION:
@@ -103,9 +101,14 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
     for field in ("release_id", "payload_digest"):
         if not isinstance(manifest[field], str) or not _RELEASE_ID.fullmatch(manifest[field]):
             raise ValueError(f"{field} is not canonical sha256:<lowercase-hex>")
-    _require_fields(manifest["runtime"], _REQUIRED_RUNTIME_FIELDS, "runtime")
     _require_fields(manifest["provenance"], _REQUIRED_PROVENANCE_FIELDS, "provenance")
     canonical_manifest_bytes(manifest)
+
+
+def _validate_payload(payload: Mapping[str, object]) -> None:
+    if not isinstance(payload, Mapping) or set(payload) != {"runtime"}:
+        raise ValueError("payload must contain only the runtime object")
+    _require_fields(payload["runtime"], {"resolved_compilation_inputs"}, "runtime")
 
 
 def _require_fields(value: object, fields: set[str], name: str) -> None:
@@ -114,3 +117,85 @@ def _require_fields(value: object, fields: set[str], name: str) -> None:
     missing = sorted(fields - value.keys())
     if missing:
         raise ValueError(f"{name} is missing required fields: {', '.join(missing)}")
+
+
+def _canonical_mapping(value: Mapping[str, object]) -> bytes:
+    if not isinstance(value, Mapping):
+        raise ValueError("value must be a mapping")
+    try:
+        return _canonical_value(value)
+    except (TypeError, UnicodeError, ValueError) as error:
+        raise ValueError(f"value is not json-c14n-v1: {error}") from error
+
+
+def _canonical_value(value: Any) -> bytes:
+    if value is None:
+        return b"null"
+    if value is True:
+        return b"true"
+    if value is False:
+        return b"false"
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value).encode("ascii")
+    if isinstance(value, str):
+        return _json_string(unicodedata.normalize("NFC", value))
+    if isinstance(value, list):
+        return b"[" + b",".join(_canonical_value(item) for item in value) + b"]"
+    if isinstance(value, Mapping):
+        items: list[tuple[bytes, bytes, bytes]] = []
+        seen: set[str] = set()
+        for key, item in value.items():
+            if not isinstance(key, str) or not key.isascii():
+                raise ValueError("object keys must be ASCII strings")
+            key = unicodedata.normalize("NFC", key)
+            if key in seen:
+                raise ValueError(f"duplicate key: {key!r}")
+            seen.add(key)
+            items.append((key.encode("utf-8"), _json_string(key), _canonical_value(item)))
+        items.sort(key=lambda pair: pair[0])
+        return b"{" + b",".join(key + b":" + item for _, key, item in items) + b"}"
+    raise ValueError(f"unsupported JSON value: {type(value).__name__}")
+
+
+def _json_string(value: str) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def _read_canonical_json(data: bytes, name: str) -> object:
+    if not isinstance(data, bytes):
+        raise ValueError(f"{name} must be bytes")
+    try:
+        value = json.loads(
+            data.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_int=_parse_integer,
+            parse_float=_reject_number,
+            parse_constant=_reject_number,
+        )
+        canonical = _canonical_value(value)
+    except (UnicodeError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise ValueError(f"{name} is not canonical JSON: {error}") from error
+    if canonical != data:
+        raise ValueError(f"{name} bytes are not canonical")
+    if name == "payload":
+        _validate_payload(value)
+    return value
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate key: {key!r}")
+        result[key] = value
+    return result
+
+
+def _parse_integer(raw: str) -> int:
+    if raw == "-0":
+        raise ValueError("negative zero is forbidden")
+    return int(raw)
+
+
+def _reject_number(raw: str) -> object:
+    raise ValueError(f"JSON number is forbidden: {raw}")

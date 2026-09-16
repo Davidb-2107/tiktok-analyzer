@@ -1,0 +1,30 @@
+{
+  "version": "json-c14n-v1",
+  "mapping_vectors": [
+    {
+      "name": "ascii-key-order",
+      "value": {"2": "two", "10": "ten"},
+      "expected_utf8": "{\"10\":\"ten\",\"2\":\"two\"}"
+    },
+    {
+      "name": "nfc-string",
+      "value": {"text": "e\u0301"},
+      "expected_utf8": "{\"text\":\"é\"}"
+    },
+    {
+      "name": "canonical-decimal-string",
+      "value": {"ratio": "1.25"},
+      "expected_utf8": "{\"ratio\":\"1.25\"}"
+    },
+    {
+      "name": "required-json-escaping-and-utf8",
+      "value": {"text": "é\n\""},
+      "expected_utf8": "{\"text\":\"é\\n\\\"\"}"
+    }
+  ],
+  "rejected_stored_bytes": [
+    {"name": "duplicate-key", "utf8": "{\"a\":1,\"a\":2}"},
+    {"name": "float", "utf8": "{\"value\":1.0}"},
+    {"name": "negative-zero", "utf8": "{\"value\":-0}"}
+  ]
+}
