@@ -408,33 +408,42 @@ class SubformulaMappingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("--cluster requires --channel", result.stdout)
 
-    @unittest.skipUnless(
-        Path(os.environ.get("VAULT_DIR", ""), "wiki/analyses/2026-09-11-neon-psycho-clusters.md").is_file(),
-        "canonical Vault mapping is not configured",
-    )
     def test_approved_vault_mapping_resolves_exact_channel_sets(self):
+        vault_dir = os.environ.get("VAULT_DIR")
+        self.assertTrue(
+            vault_dir,
+            "release gate requires VAULT_DIR pointing at the canonical Vault; "
+            "the real mapping check must not be skipped",
+        )
+        mapping_path = Path(vault_dir) / "wiki/analyses/2026-09-11-neon-psycho-clusters.md"
+        self.assertTrue(
+            mapping_path.is_file(),
+            "release gate requires the canonical mapping at "
+            f"{mapping_path}",
+        )
         expected = {
             "@viraldtoprw": {
-                "viraldtoprw_end_of_life_attachment": {
-                    "7571154788486827295",
-                    "7568334048544820510",
-                },
-                "viraldtoprw_behavioral_attachment": {
-                    "7572606346403564831",
-                    "7570326672780643614",
-                    "7572554313268989215",
-                },
+                "viraldtoprw_end_of_life_attachment": (
+                    {"7571154788486827295", "7568334048544820510"}, "assigned"
+                ),
+                "viraldtoprw_behavioral_attachment": (
+                    {
+                        "7572606346403564831",
+                        "7570326672780643614",
+                        "7572554313268989215",
+                    },
+                    "assigned",
+                ),
             },
             "@the.wisejourney": {
-                "wise_provocative_relationship_claim": {
-                    "7597962877495938326",
-                    "7604187243971939606",
-                },
-                "wise_pattern_interrupt_shock": {
-                    "7608722463937072407",
-                    "7629453809315499286",
-                },
-                "outlier_no_formula": {"7589746128195783958"},
+                "wise_provocative_relationship_claim": (
+                    {"7597962877495938326", "7604187243971939606"}, "assigned"
+                ),
+                "wise_pattern_interrupt_shock": (
+                    {"7608722463937072407", "7629453809315499286"},
+                    "analysis_group_only",
+                ),
+                "outlier_no_formula": ({"7589746128195783958"}, "outlier"),
             },
         }
         for channel, assignments in expected.items():
@@ -442,8 +451,35 @@ class SubformulaMappingTests(unittest.TestCase):
             result = bc.load_subformula_mapping(videos)
             actual = {}
             for row in result:
-                actual.setdefault(row["subformula_id"], set()).add(row["video_id"])
+                ids, statuses = actual.setdefault(row["subformula_id"], (set(), set()))
+                ids.add(row["video_id"])
+                statuses.add(row["status"])
+            self.assertTrue(
+                all(len(statuses) == 1 for _ids, statuses in actual.values()),
+                f"non-uniform mapping statuses: {actual}",
+            )
+            actual = {
+                subformula_id: (ids, status.pop())
+                for subformula_id, (ids, status) in actual.items()
+            }
             self.assertEqual(actual, assignments)
+
+            cluster = next(
+                subformula_id
+                for subformula_id, (_ids, status) in assignments.items()
+                if status == "assigned"
+            )
+            brief = bc.compile_brief("neon_psycho", channel=channel, cluster=cluster)
+            slug = channel[1:]
+            self.assertEqual(brief["source"]["channel"], channel)
+            self.assertEqual(
+                brief["source"]["format_card_ref"],
+                f"Projects/Sourcing/transcripts/neon_psycho/{slug}/",
+            )
+            self.assertEqual(
+                brief["source"]["channel_formula_ref"],
+                f"Projects/Sourcing/formats/neon_psycho/{slug}.md",
+            )
 
 
 if __name__ == "__main__":

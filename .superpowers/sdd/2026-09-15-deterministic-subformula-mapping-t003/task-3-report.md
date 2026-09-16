@@ -39,8 +39,8 @@ After implementation, the focused suite passed.
 
 ## Verification and self-review
 
-- `test_subformula_mapping.py`: 18 passed, 1 skipped (the existing canonical
-  Vault integration test is skipped when `VAULT_DIR` is not configured).
+- `test_subformula_mapping.py`: 17 passed + 1 skipped without `VAULT_DIR`; 18
+  passed with the canonical Vault selected.
 - `test_brief_compiler.py`: passed.
 - `git diff --check`: passed.
 - Reviewed the final diff: only `brief_compiler.py`, its focused tests, and this
