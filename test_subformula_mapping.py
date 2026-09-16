@@ -29,10 +29,22 @@ def _mapping(rows, *, niche="neon_psycho", heading=HEADING):
         HEADER,
         SEPARATOR,
     ]
-    lines.extend(
-        f"| `{video_id}` | `{channel}` | AI animation | 5 | question | angle | payoff | `{assignment}` |"
-        for video_id, channel, assignment in rows
-    )
+    for row in rows:
+        if len(row) == 3:
+            video_id, channel, assignment = row
+            style, realism, hook = "AI animation", 5, "question"
+        else:
+            video_id, channel, assignment, style, realism, hook = row
+        lines.append(
+            "| `{video_id}` | `{channel}` | {style} | {realism} | {hook} | angle | payoff | `{assignment}` |".format(
+                video_id=video_id,
+                channel=channel,
+                style=style,
+                realism=realism,
+                hook=hook,
+                assignment=assignment,
+            )
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -119,6 +131,67 @@ class SubformulaMappingTests(unittest.TestCase):
         self.assertEqual({row["channel"] for row in result}, {"@alpha"})
         self.assertEqual({row["status"] for row in result}, {"assigned"})
 
+    def test_shared_visual_values_never_merge_channel_formulas(self):
+        rows = [
+            ("111111111111111111", "@alpha", "alpha_formula", "AI animation", 5, "question"),
+            ("222222222222222222", "@alpha", "alpha_formula", "AI animation", 5, "question"),
+            ("333333333333333333", "@beta", "beta_formula", "AI animation", 5, "question"),
+            ("444444444444444444", "@beta", "beta_formula", "AI animation", 5, "question"),
+        ]
+        alpha_ids = ("111111111111111111", "222222222222222222")
+        beta_ids = ("333333333333333333", "444444444444444444")
+
+        self.assertEqual(
+            [video["video_id"] for video in self.route(rows, "alpha_formula")],
+            list(alpha_ids),
+        )
+        self.assertEqual(
+            [
+                video["video_id"]
+                for video in self.route(
+                    rows,
+                    "beta_formula",
+                    formula_channel="@beta",
+                    formula_ids=beta_ids,
+                )
+            ],
+            list(beta_ids),
+        )
+
+    def test_two_channel_fixture_routes_exact_sets_and_preserves_outlier(self):
+        rows = [
+            ("111111111111111111", "@alpha", "alpha_formula", "AI animation", 5, "question"),
+            ("222222222222222222", "@alpha", "alpha_formula", "AI animation", 5, "question"),
+            ("333333333333333333", "@beta", "beta_formula", "POV skit", 2, "bold claim"),
+            ("444444444444444444", "@beta", "beta_formula", "POV skit", 2, "bold claim"),
+            ("555555555555555555", "@beta", "outlier_no_formula", "POV skit", 2, "bold claim"),
+        ]
+        beta_ids = ("333333333333333333", "444444444444444444", "555555555555555555")
+
+        self.assertEqual(
+            [video["video_id"] for video in self.route(rows, "alpha_formula")],
+            ["111111111111111111", "222222222222222222"],
+        )
+        self.assertEqual(
+            [
+                video["video_id"]
+                for video in self.route(
+                    rows,
+                    "beta_formula",
+                    formula_channel="@beta",
+                    formula_ids=beta_ids,
+                )
+            ],
+            ["333333333333333333", "444444444444444444"],
+        )
+        self.assert_route_error(
+            rows,
+            "outlier_no_formula",
+            "outlier",
+            formula_channel="@beta",
+            formula_ids=beta_ids,
+        )
+
     def test_outlier_and_analysis_only_assignments_are_retained(self):
         rows = [
             ("111111111111111111", "@alpha", "alpha_formula"),
@@ -154,6 +227,9 @@ class SubformulaMappingTests(unittest.TestCase):
 
     def test_missing_mapping_file_is_rejected(self):
         self.assert_load_error([], "mapping.*introuvable|mapping.*missing", mapping=None)
+
+    def test_mapping_reference_cannot_escape_the_vault(self):
+        self.assert_load_error([], "escapes configured Vault", formula_ref="../mapping.md")
 
     def test_missing_exact_table_is_rejected(self):
         self.assert_load_error(
@@ -289,6 +365,13 @@ class SubformulaMappingTests(unittest.TestCase):
                 formula_channel="@the.wisejourney",
                 formula_ids=formula_ids,
             )
+
+    def test_cluster_rejects_mixed_status_assignment_as_ambiguous(self):
+        rows = [
+            ("111111111111111111", "@alpha", "alpha_formula"),
+            ("222222222222222222", "@alpha", "alpha_formula*"),
+        ]
+        self.assert_route_error(rows, "alpha_formula", "ambiguous")
 
     def test_cluster_rejects_partial_and_cross_channel_video_selections(self):
         rows = [
