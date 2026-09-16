@@ -59,3 +59,27 @@ The default real-Vault compiler smoke remains intentionally unavailable until
 legacy transcripts receive their declared `channel_id`; modifying those real
 cards/transcripts was explicitly out of scope. The checked-in synthetic Vault
 path passes the compiler smoke without that migration.
+
+## Adversarial review fix round
+
+The loader now builds transcript references from the declared frozen
+`channel_id`, identity-index records require an explicit `current_handle`,
+runtime payload wrappers reject schema-disallowed top-level fields, and the
+runtime required-field set is loaded by a shared schema helper used by both
+T005 and T006. The old-handle loader test asserts the frozen-ID reference.
+
+Final fix-round verification:
+
+| Check | Result |
+| --- | --- |
+| `python -m unittest -v test_channel_identity.py test_publication_manifest.py` | 28 tests passed |
+| `VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci python test_brief_compiler.py` | passed; fixture compiler smoke |
+| `git diff --check` | passed |
+
+Fix-round changed files:
+
+- `publication/manifest.py`
+- `publication/identity.py`
+- `brief_compiler.py`
+- `test_channel_identity.py`
+- `.superpowers/sdd/2026-09-16-saas-canonical-publication/task-2-report.md`

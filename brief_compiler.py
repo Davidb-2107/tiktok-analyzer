@@ -151,7 +151,7 @@ def load_registry(niche, channel=None):
                 # n_sections/valid/errors/card (fields) -> inspect_cards() n'a plus
                 # besoin de reparser le texte via fcr.parse_card en double.
                 "card_inspect": fcr.inspect_file(f),
-                "ref": f"Projects/Sourcing/transcripts/{niche}/{slug}/{f.name}",
+                "ref": f"Projects/Sourcing/transcripts/{niche}/{channel_id}/{f.name}",
             }
         )
     channels = sorted({v["channel"] for v in videos if v["channel"]})

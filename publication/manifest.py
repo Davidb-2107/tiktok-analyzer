@@ -6,12 +6,15 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 
 _RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _DECIMAL_SOURCE = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?\Z")
 _DECIMAL_CANONICAL = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?\Z")
+_SCHEMA_PATH = Path(__file__).with_name("snapshot.schema.json")
 _SUPPORTED_SCHEMA_VERSION = 1
 _CANONICALIZATION_VERSION = "json-c14n-v1"
 _HASH_ALGORITHM = "sha256"
@@ -25,14 +28,6 @@ _REQUIRED_MANIFEST_FIELDS = {
     "payload_digest",
     "provenance",
 }
-_REQUIRED_RUNTIME_FIELDS = {
-    "taxonomy",
-    "channels",
-    "formulas",
-    "cards",
-    "mappings",
-    "resolved_compilation_inputs",
-}
 _REQUIRED_PROVENANCE_FIELDS = {
     "vault_commit",
     "builder_version",
@@ -43,6 +38,30 @@ _REQUIRED_PROVENANCE_FIELDS = {
     "identity_history",
     "build_freshness",
 }
+
+
+@lru_cache(maxsize=None)
+def _schema_required(definition: str) -> frozenset[str]:
+    try:
+        schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+        required = schema["$defs"][definition]["required"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"checked-in snapshot schema cannot load {definition}") from error
+    if not isinstance(required, list) or not all(isinstance(field, str) for field in required):
+        raise RuntimeError(f"checked-in snapshot schema has invalid {definition} required fields")
+    return frozenset(required)
+
+
+@lru_cache(maxsize=None)
+def _schema_properties(definition: str) -> frozenset[str]:
+    try:
+        schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+        properties = schema["$defs"][definition]["properties"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"checked-in snapshot schema cannot load {definition}") from error
+    if not isinstance(properties, dict) or not all(isinstance(field, str) for field in properties):
+        raise RuntimeError(f"checked-in snapshot schema has invalid {definition} properties")
+    return frozenset(properties)
 
 
 def canonical_manifest_bytes(manifest: Mapping[str, object]) -> bytes:
@@ -161,7 +180,7 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
     if not isinstance(payload, Mapping) or set(payload) != {"runtime"}:
         raise ValueError("payload must contain only the runtime object")
     runtime = payload["runtime"]
-    _require_fields(runtime, _REQUIRED_RUNTIME_FIELDS, "runtime")
+    _require_fields(runtime, _schema_required("runtime"), "runtime")
     resolved_inputs = runtime["resolved_compilation_inputs"]
     if not isinstance(resolved_inputs, Mapping):
         raise ValueError("resolved_compilation_inputs must be a mapping")

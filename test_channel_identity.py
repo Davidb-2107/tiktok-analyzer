@@ -85,6 +85,7 @@ class ChannelIdentityTests(unittest.TestCase):
             "project_id": "neon_psycho",
             "channel_id": "alpha",
             "channel_id_scheme": "handle-slug-v1",
+            "current_handle": "@alpha",
             "origin_handle": "@alpha",
             "origin_release": "release-1",
             "actor": "actor-1",
@@ -102,6 +103,7 @@ class ChannelIdentityTests(unittest.TestCase):
             {
                 "channel_id": allocated,
                 "channel_id_scheme": scheme,
+                "current_handle": "@beta",
                 "origin_handle": "@beta",
                 "origin_release": "release-2",
                 "handle_history": [_history_entry("@beta")],
@@ -144,6 +146,7 @@ class ChannelIdentityTests(unittest.TestCase):
             "project_id": "neon_psycho",
             "channel_id": "alpha",
             "channel_id_scheme": "handle-slug-v1",
+            "current_handle": "@alpha",
             "origin_handle": "@alpha",
             "origin_release": "release-1",
             "actor": "actor-1",
@@ -160,6 +163,20 @@ class ChannelIdentityTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "overlap"):
             validate_identity_index(_index(first, second))
+
+    def test_identity_index_requires_explicit_current_handle(self):
+        record = {
+            "project_id": "neon_psycho",
+            "channel_id": "alpha",
+            "channel_id_scheme": "handle-slug-v1",
+            "origin_handle": "@alpha",
+            "origin_release": "release-1",
+            "actor": "actor-1",
+            "evidence": "evidence-1",
+            "handle_history": [_history_entry("@alpha")],
+        }
+        with self.assertRaisesRegex(ValueError, "current_handle"):
+            validate_identity_index(_index(record))
 
     def test_touching_intervals_are_not_overlapping(self):
         history = [
@@ -196,6 +213,12 @@ class ChannelIdentityTests(unittest.TestCase):
         runtime["channels"][0]["channel_id_scheme"] = "project-wide-v1"
         with self.assertRaisesRegex(ValueError, "channel_id_scheme"):
             validate_runtime_payload(runtime, project_id="neon_psycho")
+
+        with self.assertRaisesRegex(ValueError, "unexpected"):
+            validate_runtime_payload(
+                {"runtime": _runtime(), "extra": {}},
+                project_id="neon_psycho",
+            )
 
     def test_resolved_measurements_are_required_nonempty_canonical_strings(self):
         for field in ("target_wpm", "target_duration_s", "shot_duration_s"):
@@ -303,6 +326,11 @@ class ChannelIdentityTests(unittest.TestCase):
             videos = bc.load_registry("neon_psycho", channel="@old_handle")
         self.assertEqual(videos[0]["channel"], "@old_handle")
         self.assertEqual(videos[0]["channel_id"], "frozen-id")
+        self.assertEqual(
+            videos[0]["ref"],
+            "Projects/Sourcing/transcripts/neon_psycho/frozen-id/1234567890123456789.md",
+        )
+        self.assertNotIn("old_handle", videos[0]["ref"])
 
     def test_loader_rejects_missing_or_mismatched_declared_channel_id(self):
         with self._temporary_transcript(channel_id="frozen-id"):

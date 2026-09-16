@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from collections.abc import Iterator, Mapping
 from datetime import datetime, timezone
-from functools import lru_cache
-from pathlib import Path
 
-from .manifest import _DECIMAL_CANONICAL
+from .manifest import _DECIMAL_CANONICAL, _schema_properties, _schema_required
 
 
-_SCHEMA_PATH = Path(__file__).with_name("snapshot.schema.json")
 _HANDLE = re.compile(r"@[a-z0-9][a-z0-9._-]*\Z")
 _CHANNEL_SCHEMES = {"handle-slug-v1", "opaque-v1"}
 _PRECISIONS = {"exact", "approximate"}
@@ -33,24 +29,13 @@ _IDENTITY_FIELDS = {
     "project_id",
     "channel_id",
     "channel_id_scheme",
+    "current_handle",
     "origin_handle",
     "origin_release",
     "actor",
     "evidence",
     "handle_history",
 }
-
-
-@lru_cache(maxsize=None)
-def _schema_required(definition: str) -> frozenset[str]:
-    try:
-        schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
-        required = schema["$defs"][definition]["required"]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
-        raise RuntimeError(f"checked-in snapshot schema cannot load {definition}") from error
-    if not isinstance(required, list) or not all(isinstance(field, str) for field in required):
-        raise RuntimeError(f"checked-in snapshot schema has invalid {definition} required fields")
-    return frozenset(required)
 
 
 def _require_mapping(value: object, name: str) -> Mapping[str, object]:
@@ -194,20 +179,8 @@ def _record_project(record: Mapping[str, object]) -> str:
 
 
 def _identity_intervals(record: Mapping[str, object]) -> list[tuple[str, tuple[datetime, datetime | None]]]:
-    channel_record = record
-    if "current_handle" not in record:
-        history = record.get("handle_history")
-        if isinstance(history, list):
-            open_entries = [
-                entry
-                for entry in history
-                if isinstance(entry, Mapping) and entry.get("valid_to") is None
-            ]
-            if len(open_entries) == 1:
-                channel_record = dict(record)
-                channel_record["current_handle"] = open_entries[0].get("handle")
-    validate_channel_record(channel_record)
-    return _validated_history(channel_record)
+    validate_channel_record(record)
+    return _validated_history(record)
 
 
 def validate_identity_index(index: Mapping[str, object]) -> None:
@@ -373,6 +346,8 @@ def validate_runtime_payload(
     """Validate the T005 runtime shape plus T006 identity invariants."""
     value = _require_mapping(payload_or_runtime, "payload")
     if "runtime" in value:
+        if set(value) - _schema_properties("payload"):
+            raise ValueError("payload contains unexpected fields")
         runtime = _require_mapping(value["runtime"], "runtime")
     else:
         runtime = value
