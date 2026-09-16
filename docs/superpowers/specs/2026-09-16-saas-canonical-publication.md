@@ -57,6 +57,7 @@ snapshot
     ├── vault_commit
     ├── builder_version
     ├── taxonomy module digest
+    ├── channel identity history[]
     ├── SOT versions and digests
     ├── voice-profile digest
     └── build-time freshness results
@@ -66,7 +67,9 @@ The exact serialization may evolve, but every implementation must preserve
 these boundaries:
 
 - `runtime` contains only inputs consumed by compilation and the resolved
-  values needed by consumers.
+  values needed by consumers. A runtime channel record contains
+  `channel_id`, `channel_id_scheme`, and `current_handle`; identity evidence,
+  interval precision, and declaration metadata live under provenance.
 - `provenance` explains which approved source and builder produced the
   runtime data. Provenance is not a second runtime source of truth.
 - The payload excludes transcript verbatim, raw media, editable Vault prose,
@@ -81,6 +84,10 @@ these boundaries:
   is bumped for allowed-value or validation-behaviour changes. The digest of
   the authoritative taxonomy module is stored beside it because equal value
   arrays do not prove equal module behaviour.
+
+The channel record is therefore represented across the two namespaces without
+duplicating authority: runtime carries the identity needed for compilation and
+routing, while provenance carries the evidence and historical explanation.
 
 ## Identity contract
 
@@ -110,12 +117,16 @@ these boundaries:
 
 ### Channel record and handle history
 
-Every published channel record contains:
+Every published channel identity is represented across the runtime and
+provenance namespaces:
 
 ```text
+runtime:
 channel_id
 channel_id_scheme
 current_handle
+
+provenance:
 handle_history[]
 ```
 
@@ -150,9 +161,18 @@ The following invariants are mandatory:
    scheme, actor, evidence, and intervals and survives release rotation. A
    snapshot alone cannot prove cross-release uniqueness.
 
-Cards and transcripts are assigned to the `channel_id` partition. Historical
+Cards and transcripts declare `channel_id` in their frontmatter and the
+publisher rejects a declaration that disagrees with the partition. During the
+one-time migration, the trusted builder may populate this field from the
+verified legacy partition and write it into the published representation; the
+runtime loader never silently inherits identity from a directory. Historical
 handle text remains provenance. Existing handle-prefixed `subformula_id`
 values remain opaque historical IDs: they are neither rewritten nor parsed.
+
+The identity index is a mutable audited allocation cache, not an irreplaceable
+source of truth: it is reconstructible from retained snapshot provenance.
+Restoration tooling must be able to rebuild it and then re-run the uniqueness
+invariants before accepting new publication.
 
 ## Publication lifecycle
 
@@ -168,10 +188,16 @@ values remain opaque historical IDs: they are neither rewritten nor parsed.
    `builder_version`, source revisions, digests, taxonomy information, voice
    profile digest, and build-time freshness results.
 5. The snapshot is written to a private immutable R2 registry using its native
-   write-once/object-lock primitive. The content address is derived from the
-   canonical manifest serialization.
+   write-once/object-lock primitive. `release_id` is the content address of
+   the release: `sha256(canonical_manifest_without_release_id)`, with the
+   algorithm and canonicalization version fixed by the manifest contract. The
+   manifest includes the payload digest. A consumer fetches the pinned
+   `release_id`, recomputes the manifest address without trusting the
+   manifest's own ID field, compares it to the pinned ID, and then verifies
+   the payload digest. This is the non-circular trust root.
 6. Consumers pin a `release_id`; they never use `latest` or `current` as a
-   runtime dependency. `current` is only an audited human-facing alias.
+   runtime dependency. `current` is only an audited human-facing alias that
+   resolves to a release ID; it is never accepted as the runtime pin.
 
 All text-only snapshots are retained. If binary payloads are admitted, this
 retention decision is reopened. Frames therefore use a separate media artifact
@@ -195,8 +221,11 @@ The publisher and consumer preserve three distinct outcomes:
 - **Publishable but non-routable**: a valid mapping with status `outlier` or
   `analysis_group_only`. It remains addressable and auditable but cannot be
   selected as a production formula.
-- **Informative**: a valid snapshot that is older than the current SOT or
-  taxonomy authority, when the caller permits reproducible historical use.
+- **Informative**: a valid snapshot whose immutable manifest reports
+  build-time freshness as `stale`, or a current-freshness observation from the
+  separate audited index. The consumer does not infer freshness against an
+  authority it cannot access; a caller decides whether an informative result
+  is acceptable for production.
 
 Only `assigned` mapping rows are routable. A consumer never promotes an
 outlier or analysis-only group and never infers a formula from style, Realism,
@@ -235,18 +264,23 @@ The loader is re-indexed on frozen `channel_id`, not on the current handle.
 Existing directories need no physical move when their current slug is the
 frozen channel ID. After migration:
 
-- a record with an old handle and the correct partition `channel_id` loads;
-- a record whose `channel_id` disagrees with its partition fails closed;
+- a record with an old handle and a declared `channel_id` matching its
+  partition loads;
+- a record whose declared `channel_id` disagrees with its partition fails
+  closed;
 - current handles are read as history attributes, never used as identity;
 - the loader preserves the channel-scoped mapping and does not duplicate it.
 
 ### Hub and frames
 
-The backend `/hub` surface consumes a published read-model. It does not mount
-or discover the Vault in a production profile. `/hub/frame` resolves an
-opaque `frame_id` from a separate media artifact store; callers never provide
-filesystem paths. Exposure is controlled by build/configuration profile, not
-by an incidental runtime `is_dir()` check.
+The backend `/hub` surface consumes a deterministic read-model projection of
+the pinned snapshot's `runtime`; it is not a second publication artifact. It
+may be materialized or cached, but it inherits the snapshot's `release_id`,
+retention, and audit trail. It does not mount or discover the Vault in a
+production profile. `/hub/frame` resolves an opaque `frame_id` from a
+separate media artifact store; callers never provide filesystem paths.
+Exposure is controlled by build/configuration profile, not by an incidental
+runtime `is_dir()` check.
 
 ## Verification and acceptance
 
@@ -257,21 +291,32 @@ test files:
   identity invariants, and the synthetic mapping contract. It contains no
   real handles, video IDs, or canonical mapping-note paths.
 - Trusted private CI runs the same module against the approved real snapshot
-  and fails closed when that source is unavailable. It owns real-identity leak
-  scanning and the canonical real-ID assertions; those real-only assertions
-  are not copied into public fixtures.
+  from the Vault/release CI boundary, not from public Analyzer pull-request
+  jobs. It checks out the Analyzer revision under test and supplies an
+  authenticated pinned release. Missing private source is a test error, never
+  a skip. The private regime owns real-identity leak scanning and the
+  canonical real-ID assertions; those real-only assertions are not copied
+  into public fixtures.
+
+The module receives an explicit regime/source configuration. Public runs
+select synthetic contract cases; private runs select the required real-source
+cases. The same test code is parameterized for both paths, and the private
+canonical gate is fail-closed rather than guarded by `skipUnless`.
 
 The feature is accepted only when all of the following are demonstrated:
 
-1. Local draft compilation and published-release compilation produce
-   byte-identical brief JSON for the same resolved inputs.
+1. A local draft and a published release are built from the same
+   `vault_commit` and `builder_version`, then compiled through
+   `local:<draft>` and `release:<release_id>` source paths. Their brief JSON
+   is byte-identical.
 2. No absolute filesystem path occurs anywhere in the brief output.
 3. Replacing transcript verbatim with a poison sentinel leaves the brief
    byte-identical; if this fails, transcript data has become a compilation
    input and the payload decision must be reopened.
 4. The exact `wpm_source` string is preserved.
-5. The shared tests cover both channel partition directions: an old handle
-   with the correct frozen ID loads, and an ID/partition mismatch fails.
+5. Every published transcript declares `channel_id`; the shared tests cover
+   both channel partition directions: an old handle with the declared frozen
+   ID loads, and a tampered declared ID/partition mismatch fails.
 6. Mapping rows with `assigned`, `analysis_group_only`, and `outlier` preserve
    their statuses, with only `assigned` routable.
 7. Public synthetic and private real runs execute the same test module, with
