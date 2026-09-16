@@ -37,6 +37,9 @@ revision is part of T005 and must land before T009:
 - Provenance names are exact: `vault_commit`, `builder_version`,
   `taxonomy_module_digest`, `module_digests`, `sot_versions`,
   `voice_profile_digest`, `identity_history`, and `build_freshness`.
+- The reader exposes a strict manifest-bytes entry point. It rejects duplicate
+  keys, non-canonical bytes, and payloads that do not satisfy the declared
+  runtime schema before release verification.
 
 ## Interfaces
 
@@ -45,6 +48,7 @@ revision is part of T005 and must land before T009:
 ```python
 canonical_manifest_bytes(manifest: Mapping[str, object]) -> bytes
 canonical_payload_bytes(payload: Mapping[str, object]) -> bytes
+parse_manifest_bytes(data: bytes) -> Mapping[str, object]
 release_id_for(manifest: Mapping[str, object]) -> str
 payload_digest(payload: bytes) -> str
 verify_release(release_id: str, manifest: Mapping[str, object], payload: bytes) -> None
