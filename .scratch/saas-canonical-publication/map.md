@@ -32,8 +32,6 @@ contract and migration route, not the SaaS implementation itself.
 
 ## Not yet specified
 
-- How `channel_id` is issued, how handle history is retained, and how stable
-  artifact names are produced without mutable handles.
 - How the builder, snapshot registry, synthetic mapping fixtures, and hub/media
   artifact migration are implemented and sliced.
 - The SaaS tenancy, authorization, and lifecycle model; revisit after the
