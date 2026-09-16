@@ -53,6 +53,14 @@ def canonical_payload_bytes(payload: Mapping[str, object]) -> bytes:
     return _canonical_mapping(payload)
 
 
+def parse_manifest_bytes(data: bytes) -> Mapping[str, object]:
+    """Parse and validate stored canonical manifest.json bytes."""
+    manifest = _read_canonical_json(data, "manifest")
+    if not isinstance(manifest, Mapping):
+        raise ValueError("manifest must be a JSON object")
+    return manifest
+
+
 def payload_digest(payload: bytes) -> str:
     """Return the SHA-256 digest of exact canonical payload.json bytes."""
     _read_canonical_json(payload, "payload")
@@ -67,9 +75,12 @@ def release_id_for(manifest: Mapping[str, object]) -> str:
     return f"sha256:{hashlib.sha256(canonical_manifest_bytes(addressed_manifest)).hexdigest()}"
 
 
-def verify_release(release_id: str, manifest: Mapping[str, object], payload: bytes) -> None:
+def verify_release(release_id: str, manifest: Mapping[str, object] | bytes, payload: bytes) -> None:
     """Fail closed unless the pinned release, manifest, and payload agree."""
-    _validate_manifest(manifest)
+    if isinstance(manifest, bytes):
+        manifest = parse_manifest_bytes(manifest)
+    else:
+        _validate_manifest(manifest)
     if not isinstance(release_id, str) or not _RELEASE_ID.fullmatch(release_id):
         raise ValueError("release ID is not canonical sha256:<lowercase-hex>")
 
@@ -108,7 +119,7 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
 def _validate_payload(payload: Mapping[str, object]) -> None:
     if not isinstance(payload, Mapping) or set(payload) != {"runtime"}:
         raise ValueError("payload must contain only the runtime object")
-    _require_fields(payload["runtime"], {"resolved_compilation_inputs"}, "runtime")
+    _require_fields(payload["runtime"], _REQUIRED_RUNTIME_FIELDS, "runtime")
 
 
 def _require_fields(value: object, fields: set[str], name: str) -> None:
@@ -179,6 +190,8 @@ def _read_canonical_json(data: bytes, name: str) -> object:
         raise ValueError(f"{name} bytes are not canonical")
     if name == "payload":
         _validate_payload(value)
+    elif name == "manifest":
+        _validate_manifest(value)
     return value
 
 

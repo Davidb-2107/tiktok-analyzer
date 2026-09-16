@@ -7,6 +7,7 @@ from pathlib import Path
 from publication.manifest import (
     canonical_manifest_bytes,
     canonical_payload_bytes,
+    parse_manifest_bytes,
     payload_digest,
     release_id_for,
     verify_release,
@@ -87,6 +88,25 @@ class PublicationManifestTests(unittest.TestCase):
             release_id_for({**manifest, "runtime": runtime_payload()["runtime"]})
         with self.assertRaises(ValueError):
             canonical_payload_bytes({"runtime": {}, "provenance": {}})
+
+    def test_payload_requires_all_runtime_schema_fields(self) -> None:
+        # Break caught: accepting a payload that the checked-in schema rejects.
+        with self.assertRaisesRegex(ValueError, "missing required fields"):
+            canonical_payload_bytes({"runtime": {"resolved_compilation_inputs": {}}})
+
+    def test_manifest_bytes_are_strictly_parsed_before_release_verification(self) -> None:
+        # Break caught: silently normalizing stored manifest bytes before hashing release identity.
+        manifest, payload = manifest_for()
+        stored = canonical_manifest_bytes(manifest)
+        self.assertEqual(parse_manifest_bytes(stored), manifest)
+
+        duplicate = stored[:-1] + b',"project_id":"niche-42"}'
+        noncanonical = stored.replace(b"{", b"{ ", 1)
+        for invalid in (duplicate, noncanonical):
+            with self.assertRaisesRegex(ValueError, "canonical|duplicate"):
+                parse_manifest_bytes(invalid)
+            with self.assertRaisesRegex(ValueError, "canonical|duplicate"):
+                verify_release(manifest["release_id"], invalid, payload)
 
     def test_duplicate_and_noncanonical_stored_payload_bytes_are_rejected(self) -> None:
         # Break caught: silently parsing and reserializing stored payload bytes.
