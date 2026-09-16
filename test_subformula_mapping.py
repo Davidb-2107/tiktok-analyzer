@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
@@ -92,6 +94,15 @@ class SubformulaMappingTests(unittest.TestCase):
         with self.fixture(rows, **kwargs) as videos:
             with self.assertRaisesRegex(ValueError, message):
                 bc.load_subformula_mapping(videos)
+
+    def route(self, rows, cluster, **kwargs):
+        with self.fixture(rows, **kwargs) as videos:
+            return bc.route_subformula(videos, cluster)
+
+    def assert_route_error(self, rows, cluster, message, **kwargs):
+        with self.fixture(rows, **kwargs) as videos:
+            with self.assertRaisesRegex(ValueError, message):
+                bc.route_subformula(videos, cluster)
 
     def test_valid_rows_are_channel_scoped_and_statuses_are_preserved(self):
         rows = [
@@ -221,6 +232,98 @@ class SubformulaMappingTests(unittest.TestCase):
             formula_channel="@alpha",
             formula_ids=("333333333333333333", "444444444444444444"),
         )
+
+    def test_cluster_routes_each_viraldtoprw_assignment_to_its_exact_videos(self):
+        rows = [
+            ("7571154788486827295", "@viraldtoprw", "viraldtoprw_end_of_life_attachment"),
+            ("7568334048544820510", "@viraldtoprw", "viraldtoprw_end_of_life_attachment"),
+            ("7572606346403564831", "@viraldtoprw", "viraldtoprw_behavioral_attachment"),
+            ("7570326672780643614", "@viraldtoprw", "viraldtoprw_behavioral_attachment"),
+            ("7572554313268989215", "@viraldtoprw", "viraldtoprw_behavioral_attachment"),
+            ("7597962877495938326", "@the.wisejourney", "wise_provocative_relationship_claim"),
+            ("7604187243971939606", "@the.wisejourney", "wise_provocative_relationship_claim"),
+        ]
+        formula_ids = tuple(row[0] for row in rows[:5])
+        expected = {
+            "viraldtoprw_end_of_life_attachment": formula_ids[:2],
+            "viraldtoprw_behavioral_attachment": formula_ids[2:],
+        }
+        for cluster, video_ids in expected.items():
+            routed = self.route(
+                rows,
+                cluster,
+                formula_channel="@viraldtoprw",
+                formula_ids=formula_ids,
+            )
+            self.assertEqual(tuple(video["video_id"] for video in routed), video_ids)
+            self.assertEqual({video["channel"] for video in routed}, {"@viraldtoprw"})
+
+    def test_cluster_rejects_analysis_only_outlier_and_non_exact_assignments(self):
+        rows = [
+            ("7597962877495938326", "@the.wisejourney", "wise_provocative_relationship_claim"),
+            ("7604187243971939606", "@the.wisejourney", "wise_provocative_relationship_claim"),
+            ("7608722463937072407", "@the.wisejourney", "wise_pattern_interrupt_shock*"),
+            ("7629453809315499286", "@the.wisejourney", "wise_pattern_interrupt_shock*"),
+            ("7589746128195783958", "@the.wisejourney", "outlier_no_formula"),
+        ]
+        formula_ids = tuple(row[0] for row in rows)
+        routed = self.route(
+            rows,
+            "wise_provocative_relationship_claim",
+            formula_channel="@the.wisejourney",
+            formula_ids=formula_ids,
+        )
+        self.assertEqual(
+            [video["video_id"] for video in routed],
+            ["7597962877495938326", "7604187243971939606"],
+        )
+        for cluster, message in (
+            ("wise_pattern_interrupt_shock", "analysis.group.only"),
+            ("outlier_no_formula", "outlier"),
+            ("wise_", "unknown|inconnu"),
+        ):
+            self.assert_route_error(
+                rows,
+                cluster,
+                message,
+                formula_channel="@the.wisejourney",
+                formula_ids=formula_ids,
+            )
+
+    def test_cluster_rejects_partial_and_cross_channel_video_selections(self):
+        rows = [
+            ("111111111111111111", "@alpha", "alpha_formula"),
+            ("222222222222222222", "@alpha", "alpha_formula"),
+            ("333333333333333333", "@beta", "beta_formula"),
+            ("444444444444444444", "@beta", "beta_formula"),
+        ]
+        with self.fixture(rows) as videos:
+            with self.assertRaisesRegex(ValueError, "unexpected mapping rows"):
+                bc.route_subformula(videos[:1], "alpha_formula")
+            with self.assertRaisesRegex(ValueError, "exactly one selected channel"):
+                bc.route_subformula(
+                    videos + [
+                        {
+                            "niche": "neon_psycho",
+                            "channel": "@beta",
+                            "video_id": "333333333333333333",
+                        }
+                    ],
+                    "alpha_formula",
+                )
+
+    def test_compile_brief_cluster_requires_channel(self):
+        with self.assertRaisesRegex(ValueError, "--channel"):
+            bc.compile_brief("neon_psycho", cluster="alpha_formula")
+
+    def test_cli_cluster_requires_channel(self):
+        result = subprocess.run(
+            [sys.executable, "brief_compiler.py", "neon_psycho", "--cluster", "alpha_formula"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("--cluster requires --channel", result.stdout)
 
     @unittest.skipUnless(
         Path(os.environ.get("VAULT_DIR", ""), "wiki/analyses/2026-09-11-neon-psycho-clusters.md").is_file(),

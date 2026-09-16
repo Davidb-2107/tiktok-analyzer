@@ -12,7 +12,7 @@ brief.schema.json. Aucune constante de prod locale :
     les fichiers registre par-vidéo quand elles existent ; sinon inférence
     mots-clés sur la prose de la formula (fallback)
 
-Usage :  python brief_compiler.py <niche> [--channel CHANNEL] [--voice ALIAS] [--language fr]
+Usage :  python brief_compiler.py <niche> [--channel CHANNEL] [--cluster SUBFORMULA] [--voice ALIAS] [--language fr]
                                    [--out brief_<niche>[_<channel>].json]
 Self-check : python test_brief_compiler.py
 """
@@ -439,6 +439,23 @@ def load_subformula_mapping(videos):
     return selected
 
 
+def route_subformula(videos, cluster):
+    """Return the approved production sub-formula from one channel selection."""
+    records = load_subformula_mapping(videos)
+    matches = [record for record in records if record["subformula_id"] == cluster]
+    if not matches:
+        raise ValueError(f"unknown subformula for selected channel: {cluster!r}")
+    statuses = {record["status"] for record in matches}
+    if statuses == {"analysis_group_only"}:
+        raise ValueError(f"subformula is analysis_group_only, not production: {cluster}")
+    if statuses == {"outlier"}:
+        raise ValueError(f"subformula is an outlier, not production: {cluster}")
+    if statuses != {"assigned"}:
+        raise ValueError(f"ambiguous subformula assignment for selected channel: {cluster}")
+    ids = {record["video_id"] for record in matches}
+    return [video for video in videos if video["video_id"] in ids]
+
+
 # --- formula -> champs format -------------------------------------------------
 def _slug(s):
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
@@ -786,10 +803,10 @@ def build_shots(beats, shot_s):
 
 
 # --- compilation --------------------------------------------------------------
-def compile_brief(niche, voice=None, language="fr", strict=False, channel=None):
+def compile_brief(niche, voice=None, language="fr", strict=False, channel=None, cluster=None):
     """Compile un brief exécutable ; lève ValueError en --strict (cf. plus bas)."""
     brief, _card_report = _compile_brief_full(
-        niche, voice, language, strict, channel=channel
+        niche, voice, language, strict, channel=channel, cluster=cluster
     )
     return brief
 
@@ -823,12 +840,18 @@ def _enforce_strict_cards(niche, videos, card_report):
         )
 
 
-def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=None):
+def _compile_brief_full(
+    niche, voice=None, language="fr", strict=False, channel=None, cluster=None
+):
     """Comme compile_brief, mais retourne aussi le card_report déjà calculé en
     interne — évite à main() de relire le registre + rappeler inspect_cards()
     juste pour le rapport de couverture passé à readiness()."""
+    if cluster is not None and not channel:
+        raise ValueError("--cluster requires --channel")
     target_s, shot_s = sc.load_sot()
     videos = load_registry(niche, channel=channel)
+    if cluster is not None:
+        videos = route_subformula(videos, cluster)
     formula_path, formula_text = find_formula(videos)
     assert formula_text, (
         f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
@@ -1011,6 +1034,10 @@ def main():
         "--channel",
         help="chaîne exacte à compiler; obligatoire pour une niche multi-chaînes",
     )
+    ap.add_argument(
+        "--cluster",
+        help="sous-formula approuvée; exige --channel",
+    )
     ap.add_argument("--voice", help="alias voice_wpm.json (défaut: auto par niche)")
     ap.add_argument("--language", default="fr")
     ap.add_argument("--out")
@@ -1028,12 +1055,15 @@ def main():
             language=args.language,
             strict=args.strict,
             channel=args.channel,
+            cluster=args.cluster,
         )
     except ValueError as e:
         print(f"ERREUR: {e}")
         sys.exit(1)
 
     suffix = f"_{_slug(args.channel)}" if args.channel else ""
+    if args.cluster:
+        suffix += f"_{_slug(args.cluster)}"
     out = Path(args.out) if args.out else HERE / f"brief_{args.niche}{suffix}.json"
     out.write_text(json.dumps(brief, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"OK — brief valide ecrit: {out}")
