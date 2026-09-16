@@ -203,6 +203,14 @@ class ChannelIdentityTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "missing required fields"):
                     validate_runtime_payload(runtime, project_id="neon_psycho")
 
+        nested_required = schema["$defs"]["resolved_compilation_inputs"]["required"]
+        for field in nested_required:
+            runtime = _runtime()
+            del runtime["resolved_compilation_inputs"][field]
+            with self.subTest(nested_field=field):
+                with self.assertRaisesRegex(ValueError, "missing required fields"):
+                    validate_runtime_payload(runtime, project_id="neon_psycho")
+
     def test_malformed_taxonomy_and_channel_records_are_rejected(self):
         runtime = _runtime()
         del runtime["taxonomy"]["styles"]
@@ -221,13 +229,6 @@ class ChannelIdentityTests(unittest.TestCase):
             )
 
     def test_resolved_measurements_are_required_nonempty_canonical_strings(self):
-        for field in ("target_wpm", "target_duration_s", "shot_duration_s"):
-            runtime = _runtime()
-            del runtime["resolved_compilation_inputs"][field]
-            with self.subTest(field=field):
-                with self.assertRaisesRegex(ValueError, "resolved_compilation_inputs"):
-                    validate_runtime_payload(runtime, project_id="neon_psycho")
-
         for field in ("target_duration_s", "shot_duration_s"):
             runtime = _runtime()
             runtime["resolved_compilation_inputs"][field] = []

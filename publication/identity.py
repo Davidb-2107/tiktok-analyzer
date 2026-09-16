@@ -24,7 +24,6 @@ _HISTORY_FIELDS = {
     "declared_at",
 }
 _TAXONOMY_FIELDS = {"version", "styles", "mechanics", "realism_values"}
-_MEASUREMENT_FIELDS = {"target_wpm", "target_duration_s", "shot_duration_s"}
 _IDENTITY_FIELDS = {
     "project_id",
     "channel_id",
@@ -278,7 +277,11 @@ def _validate_decimal(value: object, name: str) -> None:
 
 
 def _validate_measurements(value: object) -> None:
-    inputs = _require_fields(value, _MEASUREMENT_FIELDS, "resolved_compilation_inputs")
+    inputs = _require_fields(
+        value,
+        _schema_required("resolved_compilation_inputs"),
+        "resolved_compilation_inputs",
+    )
     _validate_decimal(inputs["target_wpm"], "target_wpm")
     for field in ("target_duration_s", "shot_duration_s"):
         values = inputs[field]

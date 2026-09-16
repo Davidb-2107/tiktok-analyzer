@@ -10,7 +10,21 @@
         "cards",
         "mappings",
         "resolved_compilation_inputs"
-      ]
+      ],
+      "properties": {
+        "resolved_compilation_inputs": {
+          "$ref": "#/$defs/resolved_compilation_inputs"
+        }
+      }
+    },
+    "resolved_compilation_inputs": {
+      "type": "object",
+      "required": ["target_wpm", "target_duration_s", "shot_duration_s"],
+      "properties": {
+        "target_wpm": {"type": "string"},
+        "target_duration_s": {"type": "array", "items": {"type": "string"}},
+        "shot_duration_s": {"type": "array", "items": {"type": "string"}}
+      }
     },
     "payload": {
       "type": "object",
