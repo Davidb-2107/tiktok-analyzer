@@ -331,5 +331,11 @@ endpoints, cloud-provider implementation, R2 bucket layout, the exact
 machine-readable snapshot schema, or the implementation ticket ordering. Those
 are follow-up design and ticketing work constrained by this contract.
 
+The full snapshot schema remains implementation-defined, but canonical
+manifest serialization and its hash algorithm are versioned contract surface:
+changing field order, encoding, or canonicalization is a breaking change to
+release identity and requires explicit compatibility/migration handling;
+existing `release_id` values must never be silently reinterpreted.
+
 It does not rewrite FORMAT CARDs or transcripts, alter the canonical Realism
 scale, infer clusters, or include raw media in the runtime snapshot.
