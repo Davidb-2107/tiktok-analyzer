@@ -45,3 +45,8 @@ paths.
 
 The release manifest's approver fields must come from the authenticated
 GitHub Actions actor (`actor_id` and login), not user-provided text.
+
+The manifest's `freshness` is explicitly an immutable state measured at build
+time, not a claim about the current authority. If current freshness is needed,
+a private periodic auditor updates a separate mutable, audited index keyed by
+`release_id`; it never rewrites the snapshot manifest.
