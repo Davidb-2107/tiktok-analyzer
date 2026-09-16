@@ -52,6 +52,7 @@ def _formula(channel, video_ids, ref="wiki/analyses/mapping.md"):
     return (
         "---\n"
         f"channel: {channel}\n"
+        f"channel_id: {channel[1:]}\n"
         f"subformula_mapping_ref: {ref}\n"
         f"videos: {', '.join(video_ids)}\n"
         "---\n\n"
@@ -90,7 +91,12 @@ class SubformulaMappingTests(unittest.TestCase):
             old_formats, old_vault = bc.FORMATS, bc.sc.VAULT
             bc.FORMATS, bc.sc.VAULT = formats.parent, root
             videos = [
-                {"niche": "neon_psycho", "channel": formula_channel, "video_id": video_id}
+                {
+                    "niche": "neon_psycho",
+                    "channel": formula_channel,
+                    "channel_id": formula_channel[1:],
+                    "video_id": video_id,
+                }
                 for video_id in formula_ids
             ]
             try:
@@ -222,7 +228,13 @@ class SubformulaMappingTests(unittest.TestCase):
         self.assertEqual(result[-1]["subformula_id"], "outlier_no_formula")
 
     def test_missing_mapping_reference_is_rejected(self):
-        formula = "---\nchannel: @alpha\nvideos: 111111111111111111, 222222222222222222\n---\n"
+        formula = (
+            "---\n"
+            "channel: @alpha\n"
+            "channel_id: alpha\n"
+            "videos: 111111111111111111, 222222222222222222\n"
+            "---\n"
+        )
         self.assert_load_error([], "subformula_mapping_ref", formula=formula, mapping=None)
 
     def test_missing_mapping_file_is_rejected(self):
@@ -404,6 +416,7 @@ class SubformulaMappingTests(unittest.TestCase):
                         {
                             "niche": "neon_psycho",
                             "channel": "@beta",
+                            "channel_id": "beta",
                             "video_id": "333333333333333333",
                         }
                     ],

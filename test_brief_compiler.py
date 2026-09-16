@@ -265,6 +265,7 @@ def _write_channel_fixture(vault, niche, channel, video_ids, style, realism, hoo
     formula.write_text(
         "---\n"
         f'channel: "{channel}"\n'
+        f"channel_id: {slug}\n"
         f"videos: {', '.join(video_ids)}\n"
         "---\n\n"
         "## Constant\n"
@@ -424,7 +425,7 @@ def _test_arbitrary_channel_routing():
 
         formulas["@alpha"].write_text(
             formulas["@alpha"].read_text(encoding="utf-8").replace(
-                'channel: "@alpha"', 'channel: "@beta"'
+                "channel_id: alpha", "channel_id: beta"
             ),
             encoding="utf-8",
         )

@@ -83,3 +83,37 @@ Fix-round changed files:
 - `brief_compiler.py`
 - `test_channel_identity.py`
 - `.superpowers/sdd/2026-09-16-saas-canonical-publication/task-2-report.md`
+
+## Final formula-routing P1 fix
+
+`find_formula` now requires a nonempty shared frozen `channel_id` on selected
+videos, requires every candidate formula to declare `channel_id`, requires the
+formula filename stem to equal that declared ID, and selects only by that ID.
+Historical `channel` text remains in provenance and is not used as identity.
+Temporary/public formula fixtures and mapping-test video records now declare
+their frozen IDs. The renamed-channel regression asserts both transcript and
+formula references use `frozen-id`, not `old_handle`.
+
+Final verification:
+
+| Check | Result |
+| --- | --- |
+| `python -m unittest -q test_channel_identity.py test_publication_manifest.py` | 28 tests passed |
+| `VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci python test_brief_compiler.py` | passed; fixture compiler smoke |
+| `python -m unittest -q test_subformula_mapping.py` | 22 passed, 1 pre-existing fixture-gate failure |
+| `git diff --check` | passed |
+
+Final fix changed files:
+
+- `brief_compiler.py`
+- `test_brief_compiler.py`
+- `test_channel_identity.py`
+- `test_subformula_mapping.py`
+- `tests/fixtures/vault/Projects/Sourcing/formats/neon_psycho/ci.md`
+- `tests/fixtures/vault/Projects/Sourcing/formats/neon_psycho/fixture_b.md`
+- `.superpowers/sdd/2026-09-16-saas-canonical-publication/task-2-report.md`
+
+The final strict-ID guard rerun recorded 29 passing focused T006/T005 tests;
+the fixture compiler smoke and diff check remained passing. The existing
+mapping suite remained 22/23 because its one release-gate test requires the
+canonical mapping file absent from the checked-in synthetic Vault.

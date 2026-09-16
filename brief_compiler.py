@@ -173,24 +173,28 @@ def load_registry(niche, channel=None):
 
 def find_formula(videos):
     """Retrouve l'unique formula couvrant toute la sélection de vidéos."""
-    channels = {v.get("channel") for v in videos}
-    if len(channels) != 1:
-        raise ValueError("sélection multi-chaînes: utilisez --channel")
-    channel = channels.pop()
-    _channel_slug(channel)
+    channel_ids = {v.get("channel_id") for v in videos}
+    channel_id = next(iter(channel_ids), None)
+    if len(channel_ids) != 1 or not isinstance(channel_id, str) or not channel_id:
+        raise ValueError(
+            "sélection multi-chaînes ou channel_id manquant: utilisez --channel"
+        )
     ids = {v["video_id"] for v in videos}
     candidates = []
     partial = []
     for f in sorted((FORMATS / videos[0].get("niche", "")).glob("*.md")):
         text = f.read_text(encoding="utf-8")
-        formula_channel = parse_frontmatter(text)[0].get("channel", "")
-        formula_slug = _channel_slug(formula_channel)
-        if f.stem != formula_slug:
+        formula_channel_id = parse_frontmatter(text)[0].get("channel_id")
+        if not isinstance(formula_channel_id, str) or not formula_channel_id:
             raise ValueError(
-                f"[{videos[0]['niche']}] chaîne/fichier formula incohérents: {f} "
-                f"(attendu: {formula_slug}.md)"
+                f"[{videos[0]['niche']}] channel_id formula non canonique: {f}"
             )
-        if formula_slug != _channel_slug(channel):
+        if f.stem != formula_channel_id:
+            raise ValueError(
+                f"[{videos[0]['niche']}] channel_id/fichier formula incohérents: {f} "
+                f"(déclaré: {formula_channel_id}.md)"
+            )
+        if formula_channel_id != channel_id:
             continue
         formula_ids = set(re.findall(r"(?<!\d)\d{18,20}(?!\d)", text))
         if ids <= formula_ids:

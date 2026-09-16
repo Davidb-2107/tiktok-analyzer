@@ -1,5 +1,6 @@
 ---
 channel: "@fixture_b"
+channel_id: fixture_b
 videos: 2234567890123456789
 ---
 

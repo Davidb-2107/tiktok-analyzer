@@ -306,9 +306,21 @@ class ChannelIdentityTests(unittest.TestCase):
                 "## Transcript\n\nSynthetic transcript.\n",
                 encoding="utf-8",
             )
+            formats = root / "Projects" / "Sourcing" / "formats" / "neon_psycho"
+            formats.mkdir(parents=True)
+            (formats / f"{channel_id}.md").write_text(
+                "---\n"
+                f'channel: "{channel}"\n'
+                f"channel_id: {channel_id}\n"
+                "videos: 1234567890123456789\n"
+                "---\n\nSynthetic channel formula.\n",
+                encoding="utf-8",
+            )
             old_transcripts = bc.TRANSCRIPTS
+            old_formats = bc.FORMATS
             old_inspect = bc.fcr.inspect_file
             bc.TRANSCRIPTS = root
+            bc.FORMATS = root / "Projects" / "Sourcing" / "formats"
             bc.fcr.inspect_file = lambda _: {
                 "n_sections": 0,
                 "valid": False,
@@ -319,11 +331,13 @@ class ChannelIdentityTests(unittest.TestCase):
                 yield
             finally:
                 bc.TRANSCRIPTS = old_transcripts
+                bc.FORMATS = old_formats
                 bc.fcr.inspect_file = old_inspect
 
     def test_loader_accepts_old_handle_when_declared_id_matches_partition(self):
         with self._temporary_transcript():
             videos = bc.load_registry("neon_psycho", channel="@old_handle")
+            formula_path, formula_text = bc.find_formula(videos)
         self.assertEqual(videos[0]["channel"], "@old_handle")
         self.assertEqual(videos[0]["channel_id"], "frozen-id")
         self.assertEqual(
@@ -331,6 +345,16 @@ class ChannelIdentityTests(unittest.TestCase):
             "Projects/Sourcing/transcripts/neon_psycho/frozen-id/1234567890123456789.md",
         )
         self.assertNotIn("old_handle", videos[0]["ref"])
+        self.assertEqual(formula_path.name, "frozen-id.md")
+        self.assertIn("channel_id: frozen-id", formula_text)
+        self.assertNotIn("old_handle.md", formula_path.as_posix())
+
+    def test_find_formula_requires_nonempty_frozen_channel_id(self):
+        with self._temporary_transcript():
+            videos = bc.load_registry("neon_psycho", channel="@old_handle")
+            videos[0]["channel_id"] = ""
+            with self.assertRaisesRegex(ValueError, "channel_id"):
+                bc.find_formula(videos)
 
     def test_loader_rejects_missing_or_mismatched_declared_channel_id(self):
         with self._temporary_transcript(channel_id="frozen-id"):

@@ -1,5 +1,6 @@
 ---
 channel: "@ci"
+channel_id: ci
 videos: 1234567890123456789
 ---
 
