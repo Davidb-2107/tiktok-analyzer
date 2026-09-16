@@ -5,10 +5,13 @@ import json
 import re
 import unicodedata
 from collections.abc import Mapping
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 
 _RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_DECIMAL_SOURCE = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?\Z")
+_DECIMAL_CANONICAL = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?\Z")
 _SUPPORTED_SCHEMA_VERSION = 1
 _CANONICALIZATION_VERSION = "json-c14n-v1"
 _HASH_ALGORITHM = "sha256"
@@ -43,14 +46,51 @@ _REQUIRED_PROVENANCE_FIELDS = {
 
 
 def canonical_manifest_bytes(manifest: Mapping[str, object]) -> bytes:
-    """Return canonical json-c14n-v1 bytes for a manifest mapping."""
-    return _canonical_mapping(manifest)
+    """Validate and return canonical json-c14n-v1 bytes for a manifest."""
+    _validate_manifest(manifest)
+    return canonical_json_bytes(manifest)
+
+
+def canonical_json_bytes(value: object) -> bytes:
+    """Return canonical json-c14n-v1 bytes for any supported JSON value."""
+    try:
+        return _canonical_value(value)
+    except (TypeError, UnicodeError, ValueError) as error:
+        raise ValueError(f"value is not json-c14n-v1: {error}") from error
 
 
 def canonical_payload_bytes(payload: Mapping[str, object]) -> bytes:
     """Return canonical json-c14n-v1 bytes for the runtime-only payload."""
     _validate_payload(payload)
-    return _canonical_mapping(payload)
+    return canonical_json_bytes(payload)
+
+
+def canonical_decimal_string(value: object) -> str:
+    """Normalize an exact decimal source to the decimal-v1 text form."""
+    if isinstance(value, bool) or isinstance(value, float):
+        raise ValueError("decimal-v1 rejects binary float input")
+    if isinstance(value, str):
+        if not _DECIMAL_SOURCE.fullmatch(value):
+            raise ValueError("decimal-v1 input must not use an exponent or leading zero")
+        try:
+            decimal = Decimal(value)
+        except InvalidOperation as error:
+            raise ValueError("invalid decimal-v1 input") from error
+    elif isinstance(value, (int, Decimal)):
+        decimal = Decimal(value)
+    else:
+        raise ValueError("decimal-v1 requires an int, str, or Decimal")
+    if not decimal.is_finite():
+        raise ValueError("decimal-v1 rejects NaN and infinity")
+    if decimal == 0:
+        return "0"
+    text = format(decimal, "f")
+    if "." in text:
+        whole, fractional = text.split(".", 1)
+        text = whole + ("." + fractional.rstrip("0") if fractional.rstrip("0") else "")
+    if not _DECIMAL_CANONICAL.fullmatch(text):
+        raise ValueError("decimal-v1 output is not canonical")
+    return text
 
 
 def parse_manifest_bytes(data: bytes) -> Mapping[str, object]:
@@ -73,7 +113,7 @@ def release_id_for(manifest: Mapping[str, object]) -> str:
     _validate_manifest(manifest)
     addressed_manifest = dict(manifest)
     del addressed_manifest["release_id"]
-    return f"sha256:{hashlib.sha256(canonical_manifest_bytes(addressed_manifest)).hexdigest()}"
+    return f"sha256:{hashlib.sha256(canonical_json_bytes(addressed_manifest)).hexdigest()}"
 
 
 def verify_release(release_id: str, manifest: Mapping[str, object] | bytes, payload: bytes) -> None:
@@ -114,7 +154,7 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
         if not isinstance(manifest[field], str) or not _RELEASE_ID.fullmatch(manifest[field]):
             raise ValueError(f"{field} is not canonical sha256:<lowercase-hex>")
     _require_fields(manifest["provenance"], _REQUIRED_PROVENANCE_FIELDS, "provenance")
-    canonical_manifest_bytes(manifest)
+    canonical_json_bytes(manifest)
 
 
 def _validate_payload(payload: Mapping[str, object]) -> None:
@@ -129,15 +169,6 @@ def _require_fields(value: object, fields: set[str], name: str) -> None:
     missing = sorted(fields - value.keys())
     if missing:
         raise ValueError(f"{name} is missing required fields: {', '.join(missing)}")
-
-
-def _canonical_mapping(value: Mapping[str, object]) -> bytes:
-    if not isinstance(value, Mapping):
-        raise ValueError("value must be a mapping")
-    try:
-        return _canonical_value(value)
-    except (TypeError, UnicodeError, ValueError) as error:
-        raise ValueError(f"value is not json-c14n-v1: {error}") from error
 
 
 def _canonical_value(value: Any) -> bytes:
@@ -184,7 +215,7 @@ def _read_canonical_json(data: bytes, name: str) -> object:
             parse_float=_reject_number,
             parse_constant=_reject_number,
         )
-        canonical = _canonical_value(value)
+        canonical = canonical_json_bytes(value)
     except (UnicodeError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise ValueError(f"{name} is not canonical JSON: {error}") from error
     if canonical != data:

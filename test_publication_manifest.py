@@ -2,10 +2,13 @@ import copy
 import hashlib
 import json
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
 from publication.manifest import (
+    canonical_decimal_string,
+    canonical_json_bytes,
     canonical_manifest_bytes,
     canonical_payload_bytes,
     parse_manifest_bytes,
@@ -64,7 +67,7 @@ class PublicationManifestTests(unittest.TestCase):
         # Break caught: changing key order, NFC normalization, or compact UTF-8 output.
         for vector in VECTORS["mapping_vectors"]:
             self.assertEqual(
-                canonical_manifest_bytes(vector["value"]),
+                canonical_json_bytes(vector["value"]),
                 vector["expected_utf8"].encode("utf-8"),
                 vector["name"],
             )
@@ -73,13 +76,30 @@ class PublicationManifestTests(unittest.TestCase):
         # Break caught: accepting JSON numbers outside the integer-only contract.
         for value in (1.0, float("nan"), float("inf"), -0.0):
             with self.assertRaises(ValueError):
-                canonical_manifest_bytes({"value": value})
+                canonical_json_bytes({"value": value})
         with self.assertRaises(ValueError):
-            canonical_manifest_bytes({"é": 1})
+            canonical_json_bytes({"é": 1})
 
     def test_json_c14n_v1_accepts_canonical_decimal_strings(self) -> None:
         # Break caught: converting fractional domain values through binary floats.
-        self.assertEqual(canonical_manifest_bytes({"ratio": "1.25"}), b'{"ratio":"1.25"}')
+        self.assertEqual(canonical_json_bytes({"ratio": "1.25"}), b'{"ratio":"1.25"}')
+
+    def test_decimal_v1_normalizes_exact_sources_and_rejects_float_or_bad_grammar(self) -> None:
+        # Break caught: publishing binary-float artifacts or non-canonical decimal text.
+        self.assertEqual(canonical_decimal_string(Decimal("215.0")), "215")
+        self.assertEqual(canonical_decimal_string(Decimal("215")), "215")
+        self.assertEqual(canonical_decimal_string("215.00"), "215")
+        self.assertEqual(canonical_decimal_string(215), "215")
+        self.assertEqual(canonical_decimal_string(Decimal("1.5")), "1.5")
+        self.assertEqual(canonical_decimal_string(Decimal("-0.00")), "0")
+        for value in (215.0, 1.5, "1e3", "01.5", "1.", Decimal("NaN"), Decimal("Infinity")):
+            with self.assertRaises(ValueError):
+                canonical_decimal_string(value)
+
+    def test_canonical_manifest_bytes_requires_a_complete_manifest(self) -> None:
+        # Break caught: using the generic serializer where a validated manifest is required.
+        with self.assertRaisesRegex(ValueError, "missing required fields"):
+            canonical_manifest_bytes({"schema_version": 1})
 
     def test_payload_is_runtime_only_and_manifest_has_no_runtime_duplicate(self) -> None:
         # Break caught: reintroducing runtime into manifest.json or unrelated payload top-level data.
@@ -115,7 +135,7 @@ class PublicationManifestTests(unittest.TestCase):
 
     def test_canonical_but_incomplete_manifest_bytes_are_rejected(self) -> None:
         # Break caught: returning canonical JSON without enforcing the manifest schema.
-        incomplete = canonical_manifest_bytes({"schema_version": 1})
+        incomplete = canonical_json_bytes({"schema_version": 1})
         with self.assertRaisesRegex(ValueError, "missing required fields"):
             parse_manifest_bytes(incomplete)
 
@@ -156,6 +176,8 @@ class PublicationManifestTests(unittest.TestCase):
         manifest, payload = manifest_for()
         expected = "sha256:64e814d5ea1f351336cd4234f38019fcf343f77b227ccb4bfe9da68d6f67aa50"
         self.assertEqual(release_id_for({**manifest, "release_id": "sha256:" + "f" * 64}), expected)
+        with patch("publication.manifest.canonical_manifest_bytes", side_effect=AssertionError):
+            self.assertEqual(release_id_for(manifest), expected)
         verify_release(manifest["release_id"], manifest, payload)
 
         mutated_manifest = copy.deepcopy(manifest)

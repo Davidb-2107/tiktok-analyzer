@@ -1,6 +1,8 @@
 """Canonical snapshot publication primitives."""
 
 from .manifest import (
+    canonical_decimal_string,
+    canonical_json_bytes,
     canonical_manifest_bytes,
     canonical_payload_bytes,
     parse_manifest_bytes,
@@ -10,6 +12,8 @@ from .manifest import (
 )
 
 __all__ = [
+    "canonical_decimal_string",
+    "canonical_json_bytes",
     "canonical_manifest_bytes",
     "canonical_payload_bytes",
     "parse_manifest_bytes",
