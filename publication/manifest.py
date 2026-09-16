@@ -58,6 +58,7 @@ def parse_manifest_bytes(data: bytes) -> Mapping[str, object]:
     manifest = _read_canonical_json(data, "manifest")
     if not isinstance(manifest, Mapping):
         raise ValueError("manifest must be a JSON object")
+    _validate_manifest(manifest)
     return manifest
 
 
@@ -190,8 +191,6 @@ def _read_canonical_json(data: bytes, name: str) -> object:
         raise ValueError(f"{name} bytes are not canonical")
     if name == "payload":
         _validate_payload(value)
-    elif name == "manifest":
-        _validate_manifest(value)
     return value
 
 

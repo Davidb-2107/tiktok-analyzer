@@ -3,6 +3,7 @@ import hashlib
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from publication.manifest import (
     canonical_manifest_bytes,
@@ -100,6 +101,10 @@ class PublicationManifestTests(unittest.TestCase):
         stored = canonical_manifest_bytes(manifest)
         self.assertEqual(parse_manifest_bytes(stored), manifest)
 
+        with patch("publication.manifest._read_canonical_json", return_value={}):
+            with self.assertRaisesRegex(ValueError, "missing required fields"):
+                parse_manifest_bytes(b"{}")
+
         duplicate = stored[:-1] + b',"project_id":"niche-42"}'
         noncanonical = stored.replace(b"{", b"{ ", 1)
         for invalid in (duplicate, noncanonical):
@@ -107,6 +112,12 @@ class PublicationManifestTests(unittest.TestCase):
                 parse_manifest_bytes(invalid)
             with self.assertRaisesRegex(ValueError, "canonical|duplicate"):
                 verify_release(manifest["release_id"], invalid, payload)
+
+    def test_canonical_but_incomplete_manifest_bytes_are_rejected(self) -> None:
+        # Break caught: returning canonical JSON without enforcing the manifest schema.
+        incomplete = canonical_manifest_bytes({"schema_version": 1})
+        with self.assertRaisesRegex(ValueError, "missing required fields"):
+            parse_manifest_bytes(incomplete)
 
     def test_duplicate_and_noncanonical_stored_payload_bytes_are_rejected(self) -> None:
         # Break caught: silently parsing and reserializing stored payload bytes.
