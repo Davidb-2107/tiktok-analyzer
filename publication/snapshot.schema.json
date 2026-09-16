@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Snapshot manifest v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "canonicalization_version",
+    "hash_algorithm",
+    "project_id",
+    "project_id_scheme",
+    "release_id",
+    "payload_digest",
+    "runtime",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "canonicalization_version": {"const": "json-c14n-v1"},
+    "hash_algorithm": {"const": "sha256"},
+    "project_id": {"type": "string"},
+    "project_id_scheme": {"type": "string"},
+    "release_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "payload_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "runtime": {
+      "type": "object",
+      "required": ["taxonomy", "channels", "formulas", "cards", "mappings", "resolved_compilation_inputs"]
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "vault_commit",
+        "builder_version",
+        "taxonomy_module_digest",
+        "module_digests",
+        "voice_profile_digest",
+        "identity_history",
+        "build_freshness"
+      ]
+    }
+  }
+}
