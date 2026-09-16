@@ -118,6 +118,6 @@ The review revision is resolved in Analyzer commits `db61997`, `6309628`, and
   duplicate-key rejection, and versioned known-answer vectors.
 - Stored manifest and payload bytes are parsed strictly, validated against the
   declared shape, and rejected when non-canonical or incomplete.
-- Focused verification passes **14/14** tests; `git diff --check` and schema
+- Focused verification passes **15/15** tests; `git diff --check` and schema
   parsing pass. Independent re-review: spec compliance PASS; the stale test
   count in the local SDD report was corrected from 11 to 12.
