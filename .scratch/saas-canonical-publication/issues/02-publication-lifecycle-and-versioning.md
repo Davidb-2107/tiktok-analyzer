@@ -138,10 +138,11 @@ T02 resolves the publication lifecycle as follows.
   published without becoming runtime input; staleness is recorded rather than
   silently refreshed or treated as a publication failure.
 - Real formulas, cards, mappings, and private provenance stay in the private
-  registry. Public CI uses synthetic fixtures only, with a denylist for real
-  handles, video IDs, and canonical mapping-note paths. Trusted private CI
-  runs the real snapshot gate. Taxonomy structure already public in fixtures
-  is not treated as a private business asset.
+  registry. Trusted private CI or a Vault pre-push hook owns the real-identity
+  leak scan; the public CI must not contain real handles, video IDs, or
+  canonical mapping-note paths in a denylist. Public CI only validates the
+  synthetic-fixture contract. Taxonomy structure already public in fixtures is
+  not treated as a private business asset.
 - All snapshots are retained while payloads remain strictly textual, with a
   hash-verified secondary copy in a distinct failure domain. The recovery
   runbook is an exercised control: fetch, hash-check, validate fail-closed,
@@ -157,3 +158,7 @@ T02 resolves the publication lifecycle as follows.
 The local-to-published equivalence suite must poison the source transcript and
 assert byte-identical output. If that test ever changes, the payload boundary
 must be explicitly revisited rather than silently becoming incomplete.
+
+The approver identity is sourced from the authenticated GitHub Actions actor
+(`github.actor_id` plus `github.actor`) attached to the manual workflow run;
+it is never a free-form manifest field.

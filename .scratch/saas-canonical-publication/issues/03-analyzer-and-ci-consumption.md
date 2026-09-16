@@ -26,3 +26,17 @@ The equivalence suite must also replace source transcript text with a poison
 sentinel and assert byte-identical output. A failure means the published
 payload boundary must be reopened. Backend transcript display is not a reason
 to add verbatim text to the Analyzer snapshot.
+
+The consumer must distinguish integrity failure from staleness: a bad content
+hash, schema, taxonomy digest, or malformed snapshot fails closed; a valid but
+older SOT/taxonomy version loads with an explicit machine-readable stale signal
+and no automatic refresh. A separate caller policy may reject stale releases
+for production, but reproducibility must remain possible.
+
+The public CI must not carry the real-identity denylist. Trusted private CI or
+the Vault pre-push hook performs that scan; public CI enforces only a synthetic
+fixture contract and must never expose real handles, video IDs, or mapping-note
+paths.
+
+The release manifest's approver fields must come from the authenticated
+GitHub Actions actor (`actor_id` and login), not user-provided text.
