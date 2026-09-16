@@ -28,13 +28,14 @@ contract and migration route, not the SaaS implementation itself.
 - [T005 — Harden the release gate and reconcile documentation](../deterministic-subformula-mapping/issues/005-release-gate-and-documentation.md): the current local gate fails closed when the canonical Vault mapping cannot be verified; it is a pre-SaaS safety gate, not the target runtime architecture.
 - [Decide the canonical publication boundary](issues/01-canonical-publication-boundary.md): publish one self-contained project snapshot, consume channel partitions by immutable identity, and embed versioned runtime taxonomy/provenance instead of relying on `VAULT_DIR`.
 - [Decide publication lifecycle and versioning](issues/02-publication-lifecycle-and-versioning.md): a Vault-approved revision is manually published by trusted CI to private immutable R2, consumed by pinned release ID, with separate public-synthetic and private-real verification regimes and exercised recovery.
+- [Decide Analyzer and CI consumption](issues/03-analyzer-and-ci-consumption.md): consumers use mandatory opaque source handles and pinned releases; public/private tests share one module; brief output is byte-identical, and the remaining hub/frames migration uses a separate media artifact store.
 
 ## Not yet specified
 
-- How the Analyzer, CI, and future workers consume a published snapshot while
-  retaining a local-development path during migration.
 - How `channel_id` is issued, how handle history is retained, and how stable
   artifact names are produced without mutable handles.
+- How the builder, snapshot registry, synthetic mapping fixtures, and hub/media
+  artifact migration are implemented and sliced.
 - The SaaS tenancy, authorization, and lifecycle model; revisit after the
   publication boundary is defined.
 

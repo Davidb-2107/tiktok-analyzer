@@ -170,3 +170,8 @@ Freshness is publisher-owned: private CI compares the approved revision against
 the current SOT/taxonomy authority and records the result in the manifest. A
 consumer cannot infer currentness without those authorities; it may only check
 internal integrity and its supported compatibility range.
+
+Media frames are not part of the text-only snapshot retention rule. If `/hub`
+frames are published after cutover, they use a separate media artifact store
+with its own retention, backup, integrity, and restoration policy; introducing
+that binary payload reopens only the media policy, not the text snapshot rule.
