@@ -148,9 +148,9 @@ Command:
 C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
 
 Output:
-............
+..............
 ----------------------------------------------------------------------
-Ran 12 tests in 0.011s
+Ran 14 tests in 0.011s
 
 OK
 ```
