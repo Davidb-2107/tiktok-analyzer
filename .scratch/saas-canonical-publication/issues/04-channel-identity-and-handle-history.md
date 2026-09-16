@@ -66,6 +66,8 @@ creation, but a later rename must not change identity or published references.
   `valid_to`, `evidence`, `declared_by`, and `declared_at`; the dates are UTC,
   `valid_to` is null for the current interval, and each bound carries an
   exact/approximate precision marker rather than an invented exact date.
+  `channel_id_scheme` belongs to this channel record, not to the project, so a
+  project may contain both handle-derived and opaque channel IDs.
 - A rename preserves a channel ID only after an authenticated human
   declaration in the Vault, with evidence and non-overlapping intervals.
   The publisher rejects both overlapping intervals for one channel and
@@ -95,7 +97,8 @@ The identity index is the cross-release authority. The Vault holds the human
 continuity declaration and evidence; the publisher validates it, records the
 authenticated actor and release, and embeds the resolved channel record in
 each snapshot. Consumers use the explicit `channel_id` and never derive it
-from a current handle.
+from a current handle. The `channel_id_scheme` is scoped to that channel
+record, not to the project, allowing mixed schemes within one project.
 
 Handle history is interval-based in UTC, with explicit precision for
 approximate boundaries, `valid_to: null` for the current interval, and two
