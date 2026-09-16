@@ -3,7 +3,7 @@
 Status: open
 Type: release-readiness
 Repository: `tiktok-analyzer-format-cards`
-Blocked by: T008, T009, T010
+Blocked by: T008, T009, T010, T012
 
 ## Goal
 

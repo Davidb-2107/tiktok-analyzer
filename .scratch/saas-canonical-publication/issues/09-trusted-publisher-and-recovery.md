@@ -3,7 +3,7 @@
 Status: open
 Type: implementation
 Repository: Vault repository
-Blocked by: T005, T006, T008
+Blocked by: T005, T006, T008, T012
 
 ## Goal
 
@@ -27,6 +27,11 @@ context, then produces the exact canonical `manifest.json`/`payload.json`
 pair required by T005. The
 registry adapter writes a pinned `release_id`, the identity index, the
 build-time freshness result, and the secondary copy.
+
+Before building any release, T009 requires the one-time T012 migration to have
+added explicit `channel_id` declarations to every legacy transcript and
+formula in the selected Vault release scope. It must fail closed if any
+record is still missing the declaration.
 
 ## Acceptance criteria
 

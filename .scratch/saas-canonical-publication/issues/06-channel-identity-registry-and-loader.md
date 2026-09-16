@@ -69,13 +69,13 @@ fields out.
 
 ## Out of scope
 
-Persistent registry storage, publisher authentication, and physical Vault
-migration are handled by T009.
+Persistent registry storage and publisher authentication are handled by T009.
+The one-time migration of legacy Vault records is handled by T012.
 
 ## Answer
 
-Implemented in commits `aab4fa3`, `33ab624`, `4fd75e4`, `6692a73`, and
-`8a42b7d`.
+Implemented in commits `aab4fa3`, `33ab624`, `4fd75e4`, `6692a73`,
+`8a42b7d`, and follow-up `d758423`.
 
 - Frozen `channel_id` is required in transcript and formula frontmatter,
   compared with the partition directory, and used for transcript/formula
@@ -89,13 +89,15 @@ Implemented in commits `aab4fa3`, `33ab624`, `4fd75e4`, `6692a73`, and
 - Tests cover old-handle continuity, tampering, formula routing, collisions,
   mixed schemes, interval boundaries, uniqueness, malformed runtime data, and
   release-path measurement omissions.
+- Runtime formulas and mappings now require a declared project channel,
+  nested identity records cannot contradict their enclosing project, and
+  channel-record extra fields are rejected consistently.
 
-Verification: 29 focused identity/manifest tests passed, the synthetic
+Verification: 31 focused identity/manifest tests passed, the synthetic
 compiler smoke passed, schema parsing and `git diff --check` passed, and the
-adversarial review returned `Spec-compliance: PASS` and
-`Task-quality: APPROVED` with no remaining findings.
+follow-up adversarial review returned `PASS` with no findings.
 
 The real Vault remains intentionally unchanged; its legacy records still need
-the declared `channel_id` migration before the private real-Vault gate can
-run. The public synthetic mapping gate also remains outside this ticket until
-its canonical mapping fixture is supplied.
+the declared `channel_id` migration in T012 before the private real-Vault gate
+can run. The public synthetic mapping gate also remains outside this ticket
+until its canonical mapping fixture is supplied.
