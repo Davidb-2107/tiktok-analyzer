@@ -1,9 +1,9 @@
 # T006 — Implement channel identity allocation and declared partition checks
 
-Status: claimed
+Status: resolved
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
-Blocked by: T005
+Blocked by: none (T005 resolved)
 
 ## Goal
 
@@ -71,3 +71,31 @@ fields out.
 
 Persistent registry storage, publisher authentication, and physical Vault
 migration are handled by T009.
+
+## Answer
+
+Implemented in commits `aab4fa3`, `33ab624`, `4fd75e4`, `6692a73`, and
+`8a42b7d`.
+
+- Frozen `channel_id` is required in transcript and formula frontmatter,
+  compared with the partition directory, and used for transcript/formula
+  references; current handles remain provenance rather than identity.
+- `publication.identity` validates allocation schemes, collision evidence,
+  UTC history intervals, both overlap invariants, current-handle projection,
+  runtime taxonomy/channel shapes, scoped formula/video uniqueness, and
+  required non-empty decimal-v1 measurements.
+- The checked-in snapshot schema is the source of required runtime and
+  resolved-input field sets; both manifest and identity validators consume it.
+- Tests cover old-handle continuity, tampering, formula routing, collisions,
+  mixed schemes, interval boundaries, uniqueness, malformed runtime data, and
+  release-path measurement omissions.
+
+Verification: 29 focused identity/manifest tests passed, the synthetic
+compiler smoke passed, schema parsing and `git diff --check` passed, and the
+adversarial review returned `Spec-compliance: PASS` and
+`Task-quality: APPROVED` with no remaining findings.
+
+The real Vault remains intentionally unchanged; its legacy records still need
+the declared `channel_id` migration before the private real-Vault gate can
+run. The public synthetic mapping gate also remains outside this ticket until
+its canonical mapping fixture is supplied.
