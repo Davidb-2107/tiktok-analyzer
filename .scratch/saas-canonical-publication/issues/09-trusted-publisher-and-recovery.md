@@ -3,7 +3,7 @@
 Status: open
 Type: implementation
 Repository: Vault repository
-Blocked by: T005, T006, T008, T012
+Blocked by: T005, T006, T008
 
 ## Goal
 
