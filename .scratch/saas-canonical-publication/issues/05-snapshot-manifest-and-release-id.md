@@ -1,6 +1,6 @@
 # T005 — Implement the snapshot manifest and release identity
 
-Status: claimed
+Status: resolved
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T01–T04 resolved
@@ -98,3 +98,19 @@ the JSON schema parses successfully; independent spec-compliance and task-
 quality review returned PASS/APPROVED with no findings. The existing
 private-Vault gate failure when `VAULT_DIR` is absent is unrelated and remains
 assigned to the later CI/release tickets.
+
+## Answer
+
+The review revision is resolved in Analyzer commits `db61997`, `6309628`, and
+`f797713`:
+
+- `manifest.json` and `payload.json` are separate; the payload is canonical
+  runtime JSON and the manifest carries only its digest plus provenance.
+- `json-c14n-v1` is restricted and interoperable: ASCII key ordering, NFC
+  strings, integer-only JSON numbers, canonical decimal strings, compact UTF-8,
+  duplicate-key rejection, and versioned known-answer vectors.
+- Stored manifest and payload bytes are parsed strictly, validated against the
+  declared shape, and rejected when non-canonical or incomplete.
+- Focused verification passes **12/12** tests; `git diff --check` and schema
+  parsing pass. Independent re-review: spec compliance PASS; the stale test
+  count in the local SDD report was corrected from 11 to 12.

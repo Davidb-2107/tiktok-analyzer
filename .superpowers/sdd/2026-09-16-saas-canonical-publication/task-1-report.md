@@ -87,3 +87,83 @@ publication module; no test was skipped or changed to conceal it.
 - No Vault access, identity allocation, uploads, source adapters, backend
   changes, or brief compilation implemented.
 - No unrelated files were modified or reverted.
+
+## Fix round — payload boundary and json-c14n-v1
+
+The fix separates the runtime-only canonical `payload.json` from the
+release/provenance-only `manifest.json`. It adds strict `json-c14n-v1`
+canonicalization: ASCII keys sorted by raw UTF-8 bytes, NFC strings,
+integer-only numbers, canonical UTF-8 JSON bytes, duplicate-key rejection,
+and rejection of non-canonical stored payload bytes. Provenance now requires
+the exact `sot_versions` field. Versioned known-answer vectors cover key order,
+NFC normalization, decimal strings, escaping/UTF-8 bytes, duplicate keys,
+floats, and negative zero.
+
+Focused verification:
+
+```text
+Command:
+C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
+
+Output:
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.011s
+
+OK
+```
+
+```text
+Command:
+git diff --check
+
+Result: exit 0; no whitespace errors.
+```
+
+Fix commit changed files:
+
+- `publication/__init__.py`
+- `publication/manifest.py`
+- `publication/snapshot.schema.json`
+- `publication/canonicalization-v1-vectors.json`
+- `test_publication_manifest.py`
+
+The existing private-Vault-dependent `test_subformula_mapping.py` gate was
+not rerun in this fix round; its prior failure is recorded above and remains
+outside T005's scope.
+
+## P1 review fixes
+
+The payload validator now requires all six runtime fields named by the checked-
+in schema: `taxonomy`, `channels`, `formulas`, `cards`, `mappings`, and
+`resolved_compilation_inputs`. `parse_manifest_bytes` strictly parses stored
+manifest bytes with duplicate-key and canonical-byte rejection, and
+`verify_release` accepts those bytes directly so release identity cannot be
+computed from silently normalized storage.
+
+Focused verification:
+
+```text
+Command:
+C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
+
+Output:
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.011s
+
+OK
+```
+
+```text
+Command:
+git diff --check
+
+Result: exit 0; no whitespace errors.
+```
+
+P1 fix commit changed files:
+
+- `publication/__init__.py`
+- `publication/manifest.py`
+- `test_publication_manifest.py`
