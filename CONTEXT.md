@@ -1,7 +1,7 @@
 ---
 statut: "Option B validée ; --cluster implémenté par routage déterministe du mapping canonique, scoped par chaîne"
 prochaine_action: "utiliser --cluster avec --channel ; le mapping canonique approuvé est l'unique autorité de routage"
-maj: 2026-09-15
+maj: 2026-09-16
 ---
 
 # TikTok Analyzer

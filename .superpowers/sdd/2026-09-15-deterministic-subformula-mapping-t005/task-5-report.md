@@ -27,7 +27,7 @@ content was changed.
 - Intentional fail-closed proof: without `VAULT_DIR`, the canonical test fails
   with `release gate requires VAULT_DIR ... must not be skipped`.
 - `VAULT_DIR=<T001 Wiki_Claude-clusters> python -B -m unittest -v
-  test_subformula_mapping`: 22 passed.
+  test_subformula_mapping`: 23 passed.
 - `VAULT_DIR=<T001 Wiki_Claude-clusters> python -B test_brief_compiler.py`:
   passed.
 - `VAULT_DIR=<T001 Wiki_Claude-clusters> python -B brief_selfcheck.py`:
