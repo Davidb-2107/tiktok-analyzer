@@ -22,6 +22,7 @@ contract and migration route, not the SaaS implementation itself.
   FORMAT CARD values happen to be shared.
 - Use domain-modeling and codebase-design vocabulary when resolving decisions;
   hand off to `to-spec`, then `to-tickets`, once the route is clear.
+- Draft specification: [SaaS Canonical Publication Boundary](../../docs/superpowers/specs/2026-09-16-saas-canonical-publication.md), pending adversarial review before `to-tickets`.
 
 ## Decisions so far
 
