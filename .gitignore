@@ -31,3 +31,4 @@ _refetch_*.py
 .superpowers/sdd/**/progress.md
 .superpowers/sdd/**/review-*.diff
 .superpowers/sdd/**/re-review-*.diff
+.superpowers/sdd/**/final-review-*.diff

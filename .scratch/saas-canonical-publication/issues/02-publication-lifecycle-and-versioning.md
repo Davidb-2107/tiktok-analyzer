@@ -17,3 +17,9 @@ The publication gate must carry the resolved taxonomy semantic version together
 with the digest of the authoritative taxonomy module. Matching value arrays
 alone are insufficient because the Vault and CI modules can have different
 behavior.
+
+The decision must also define the version rule: the taxonomy version is a
+monotone semantic version owned by the taxonomy authority, it is bumped for
+any allowed-value or validation-behavior change, and every published snapshot
+stores the authoritative module digest alongside it. The digest is the
+behavioral anchor; the version is the human-readable compatibility signal.
