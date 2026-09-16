@@ -55,6 +55,9 @@ pinned release ID, including decimal normalization vectors.
 Create `publication/identity.py` and `test_channel_identity.py`; add declared
 `channel_id` validation to the registry loader. Completion requires collision,
 interval, mixed-scheme, uniqueness, matching-partition, and mismatch tests.
+Runtime-shape validation in this task also requires the resolved compilation
+inputs `target_wpm`, `target_duration_s[]`, and `shot_duration_s[]`; omission or
+empty measurement arrays fail closed.
 
 ### Task 3 — T007: source adapters and equivalence
 

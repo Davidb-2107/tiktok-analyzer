@@ -49,6 +49,9 @@ schema, so the internal payload representation does not change brief output.
 - No absolute filesystem path occurs in the brief output.
 - `script.wpm_source` remains byte-exact and transcript verbatim is excluded
   from the snapshot.
+- The source adapter refuses an incomplete runtime payload: it must receive
+  `target_wpm`, `target_duration_s[]`, and `shot_duration_s[]` before compiling
+  either a draft or a release.
 - The poison test changes source transcript text while keeping all compiled
   inputs constant and proves identical output; if output changes, the test
   fails.

@@ -40,6 +40,13 @@ sets, rather than maintaining a second list of required names in Python.
 Nested taxonomy and channel-record shapes are part of the validation surface;
 presence of only the top-level keys is insufficient.
 
+The resolved compilation-input record must also contain the required measured
+values: `target_wpm` as one `decimal-v1` string,
+`target_duration_s[]` and `shot_duration_s[]` as non-empty arrays of
+`decimal-v1` strings. The validator rejects omission, wrong JSON types, and
+empty measurement arrays; a payload cannot become valid by leaving these
+fields out.
+
 ## Acceptance criteria
 
 - Existing channels retain `handle[1:]` under `handle-slug-v1` when unused.
@@ -57,6 +64,8 @@ presence of only the top-level keys is insufficient.
   channel-scoped video assignment key.
 - Tests prove the runtime schema and validator agree on required fields and
   reject malformed taxonomy/channel records.
+- Tests reject a payload that omits any required resolved measurement or uses
+  an empty measurement array.
 
 ## Out of scope
 
