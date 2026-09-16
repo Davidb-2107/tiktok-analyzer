@@ -160,7 +160,26 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
 def _validate_payload(payload: Mapping[str, object]) -> None:
     if not isinstance(payload, Mapping) or set(payload) != {"runtime"}:
         raise ValueError("payload must contain only the runtime object")
-    _require_fields(payload["runtime"], _REQUIRED_RUNTIME_FIELDS, "runtime")
+    runtime = payload["runtime"]
+    _require_fields(runtime, _REQUIRED_RUNTIME_FIELDS, "runtime")
+    resolved_inputs = runtime["resolved_compilation_inputs"]
+    if not isinstance(resolved_inputs, Mapping):
+        raise ValueError("resolved_compilation_inputs must be a mapping")
+    if "target_wpm" in resolved_inputs:
+        _require_canonical_decimal(resolved_inputs["target_wpm"], "target_wpm")
+    for field in ("target_duration_s", "shot_duration_s"):
+        if field not in resolved_inputs:
+            continue
+        values = resolved_inputs[field]
+        if not isinstance(values, list):
+            raise ValueError(f"{field} must be a decimal-v1 array")
+        for index, value in enumerate(values):
+            _require_canonical_decimal(value, f"{field}[{index}]")
+
+
+def _require_canonical_decimal(value: object, path: str) -> None:
+    if not isinstance(value, str) or value == "-0" or not _DECIMAL_CANONICAL.fullmatch(value):
+        raise ValueError(f"{path} must be a canonical decimal-v1 string")
 
 
 def _require_fields(value: object, fields: set[str], name: str) -> None:

@@ -31,7 +31,11 @@ def runtime_payload() -> dict[str, object]:
             "formulas": [],
             "cards": [],
             "mappings": [],
-            "resolved_compilation_inputs": {},
+            "resolved_compilation_inputs": {
+                "target_wpm": "215",
+                "target_duration_s": ["1.5", "0"],
+                "shot_duration_s": ["2.5"],
+            },
         }
     }
 
@@ -115,6 +119,22 @@ class PublicationManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing required fields"):
             canonical_payload_bytes({"runtime": {"resolved_compilation_inputs": {}}})
 
+    def test_declared_decimal_payload_paths_reject_noncanonical_values(self) -> None:
+        # Break caught: silently rewriting alternate decimal spellings at the payload boundary.
+        invalid_values = (
+            ("target_wpm", "215.0"),
+            ("target_wpm", 215.0),
+            ("target_duration_s", ["1.5", "215.00"]),
+            ("target_duration_s", ["1e0"]),
+            ("shot_duration_s", ["-0"]),
+            ("shot_duration_s", [1.5]),
+        )
+        for field, value in invalid_values:
+            payload = runtime_payload()
+            payload["runtime"]["resolved_compilation_inputs"][field] = value
+            with self.assertRaisesRegex(ValueError, "decimal-v1"):
+                canonical_payload_bytes(payload)
+
     def test_manifest_bytes_are_strictly_parsed_before_release_verification(self) -> None:
         # Break caught: silently normalizing stored manifest bytes before hashing release identity.
         manifest, payload = manifest_for()
@@ -174,7 +194,7 @@ class PublicationManifestTests(unittest.TestCase):
     def test_release_identity_is_non_circular_and_verification_is_strict(self) -> None:
         # Break caught: trusting embedded release_id or accepting manifest/payload mutations.
         manifest, payload = manifest_for()
-        expected = "sha256:64e814d5ea1f351336cd4234f38019fcf343f77b227ccb4bfe9da68d6f67aa50"
+        expected = "sha256:a210d37dbce40fc80303ed37a98a2280e577cf9f0340c0bde8a476ed9e192223"
         self.assertEqual(release_id_for({**manifest, "release_id": "sha256:" + "f" * 64}), expected)
         with patch("publication.manifest.canonical_manifest_bytes", side_effect=AssertionError):
             self.assertEqual(release_id_for(manifest), expected)
