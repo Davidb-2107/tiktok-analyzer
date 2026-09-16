@@ -1,6 +1,6 @@
 # SaaS Canonical Publication Boundary
 
-Status: draft — adversarial review requested on 2026-09-16.
+Status: approved for implementation on 2026-09-16.
 
 This specification turns the resolved decisions in
 `.scratch/saas-canonical-publication/issues/01-*.md` through `04-*.md` into

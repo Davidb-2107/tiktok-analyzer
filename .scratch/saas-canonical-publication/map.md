@@ -22,7 +22,7 @@ contract and migration route, not the SaaS implementation itself.
   FORMAT CARD values happen to be shared.
 - Use domain-modeling and codebase-design vocabulary when resolving decisions;
   hand off to `to-spec`, then `to-tickets`, once the route is clear.
-- Draft specification: [SaaS Canonical Publication Boundary](../../docs/superpowers/specs/2026-09-16-saas-canonical-publication.md), pending adversarial review before `to-tickets`.
+- Approved specification: [SaaS Canonical Publication Boundary](../../docs/superpowers/specs/2026-09-16-saas-canonical-publication.md), decomposed into implementation tickets T005–T011.
 
 ## Decisions so far
 
@@ -31,11 +31,10 @@ contract and migration route, not the SaaS implementation itself.
 - [Decide publication lifecycle and versioning](issues/02-publication-lifecycle-and-versioning.md): a Vault-approved revision is manually published by trusted CI to private immutable R2, consumed by pinned release ID, with separate public-synthetic and private-real verification regimes and exercised recovery.
 - [Decide Analyzer and CI consumption](issues/03-analyzer-and-ci-consumption.md): consumers use mandatory opaque source handles and pinned releases; public/private tests share one module; brief output is byte-identical, and the remaining hub/frames migration uses a separate media artifact store.
 - [Decide channel identity and handle history](issues/04-channel-identity-and-handle-history.md): channel IDs are frozen at first publication, handle history is human-approved and interval-based, cross-release uniqueness lives in an audited identity index, and storage is keyed by channel ID rather than the current handle.
+- [T005–T011 implementation tickets](issues/05-snapshot-manifest-and-release-id.md): the approved contract is split into manifest/release identity, channel identity, source adapters, public/private CI, trusted publication/recovery, Hub/media migration, and final release hygiene.
 
 ## Not yet specified
 
-- How the builder, snapshot registry, synthetic mapping fixtures, and hub/media
-  artifact migration are implemented and sliced.
 - The SaaS tenancy, authorization, and lifecycle model; revisit after the
   publication boundary is defined.
 
