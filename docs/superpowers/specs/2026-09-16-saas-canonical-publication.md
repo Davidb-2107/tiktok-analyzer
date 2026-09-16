@@ -96,9 +96,15 @@ The manifest uses these exact provenance names: `vault_commit`,
 recipe. Canonical objects have ASCII string keys sorted lexicographically by
 UTF-8 bytes; duplicate keys are rejected. Strings are normalized to Unicode
 NFC. Values are `null`, booleans, integers, arrays, or objects; JSON floats,
-`NaN`, infinities, and negative zero are forbidden. Fractional domain values
-use canonical decimal strings with no exponent, no leading zero, and no
-trailing fractional zero. The output is compact UTF-8 JSON with no optional
+`NaN`, infinities, and negative zero are forbidden. Fields declared
+`decimal-v1` use a JSON string matching
+`^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$`: no exponent, no leading zero, no
+trailing fractional zero, and mathematical zero is always `"0"` (never
+`"-0"`). Thus `215.0`, `215`, and `215.00` all publish as `"215"`, while
+`1.5` publishes as `"1.5"`. Builders must normalize from an exact decimal
+source, never from a binary float. The source adapter decodes these strings
+for the existing brief output types; this internal representation does not
+change the brief schema. The output is compact UTF-8 JSON with no optional
 whitespace and no ASCII escaping beyond JSON-required escaping.
 
 The canonicalization vectors are versioned with the implementation and are

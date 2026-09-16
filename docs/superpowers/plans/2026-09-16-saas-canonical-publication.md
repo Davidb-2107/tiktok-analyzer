@@ -15,6 +15,9 @@
 - `release_id` is `sha256(canonical_manifest_without_release_id)` and
   `payload_digest` is the SHA-256 digest of the separate canonical runtime
   payload; canonicalization and hash versions are contract fields.
+- Measured fractional runtime values use `decimal-v1` strings: normalized
+  decimal text without exponent, leading zero, or trailing fractional zero
+  (`215.0`/`215.00` -> `"215"`); builders never publish binary floats.
 - `channel_id` is frozen at first publication, with `handle-slug-v1` or per-channel `opaque-v1`; it is never parsed or regenerated.
 - Every published transcript declares `channel_id`; the loader compares declaration and partition.
 - Only `assigned` mapping rows are routable; `outlier` and `analysis_group_only` remain addressable but non-routable.
@@ -45,7 +48,7 @@ Implement the separate canonical runtime payload, non-circular
 `release_id_for`, strict payload/manifest byte checks, and schema checks.
 Completion requires known-answer vectors plus mutation tests proving that
 neither a changed manifest nor a changed payload can pass under the original
-pinned release ID.
+pinned release ID, including decimal normalization vectors.
 
 ### Task 2 — T006: channel identity registry and loader
 

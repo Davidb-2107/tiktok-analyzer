@@ -30,8 +30,11 @@ revision is part of T005 and must land before T009:
   payload bytes.
 - `json-c14n-v1` is a restricted format: ASCII string keys only, UTF-8-byte
   lexicographic ordering, NFC strings, no floats/NaN/infinity/negative zero,
-  canonical decimal strings for fractional domain values, compact UTF-8 bytes,
-  and duplicate-key rejection. Both stored objects must already be canonical.
+  and duplicate-key rejection. Fields declared `decimal-v1` use the exact
+  normalized grammar `^-?(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$`; `215.0`, `215`,
+  and `215.00` therefore publish as `"215"`, and `1.5` as `"1.5"`. Both
+  stored objects must already be canonical. Builders normalize from exact
+  decimal input, never binary floats.
 - Versioned known-answer vectors are required for key order, NFC, numeric
   rejection/decimal strings, duplicate keys, and exact bytes.
 - Provenance names are exact: `vault_commit`, `builder_version`,

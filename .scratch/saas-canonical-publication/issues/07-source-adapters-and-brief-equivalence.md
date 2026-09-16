@@ -35,7 +35,9 @@ compiler and backend never discover it from their environment.
 
 The adapter supplies the canonical `payload.json` runtime object. It never
 reconstructs fractional values from binary floats, and it preserves the exact
-resolved `wpm_source` string required by the published brief.
+resolved `wpm_source` string required by the published brief. It decodes
+`decimal-v1` strings to the numeric types expected by the existing brief
+schema, so the internal payload representation does not change brief output.
 
 ## Acceptance criteria
 
