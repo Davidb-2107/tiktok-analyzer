@@ -72,7 +72,7 @@ Final fix-round verification:
 
 | Check | Result |
 | --- | --- |
-| `python -m unittest -v test_channel_identity.py test_publication_manifest.py` | 28 tests passed |
+| `python -m unittest -v test_channel_identity.py test_publication_manifest.py` | 29 tests passed |
 | `VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci python test_brief_compiler.py` | passed; fixture compiler smoke |
 | `git diff --check` | passed |
 
@@ -98,7 +98,7 @@ Final verification:
 
 | Check | Result |
 | --- | --- |
-| `python -m unittest -q test_channel_identity.py test_publication_manifest.py` | 28 tests passed |
+| `python -m unittest -q test_channel_identity.py test_publication_manifest.py` | 29 tests passed |
 | `VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci python test_brief_compiler.py` | passed; fixture compiler smoke |
 | `python -m unittest -q test_subformula_mapping.py` | 22 passed, 1 pre-existing fixture-gate failure |
 | `git diff --check` | passed |

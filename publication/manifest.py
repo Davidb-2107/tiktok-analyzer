@@ -38,6 +38,11 @@ _REQUIRED_PROVENANCE_FIELDS = {
     "identity_history",
     "build_freshness",
 }
+_REQUIRED_MEASUREMENT_FIELDS = {
+    "target_wpm",
+    "target_duration_s",
+    "shot_duration_s",
+}
 
 
 @lru_cache(maxsize=None)
@@ -182,16 +187,12 @@ def _validate_payload(payload: Mapping[str, object]) -> None:
     runtime = payload["runtime"]
     _require_fields(runtime, _schema_required("runtime"), "runtime")
     resolved_inputs = runtime["resolved_compilation_inputs"]
-    if not isinstance(resolved_inputs, Mapping):
-        raise ValueError("resolved_compilation_inputs must be a mapping")
-    if "target_wpm" in resolved_inputs:
-        _require_canonical_decimal(resolved_inputs["target_wpm"], "target_wpm")
+    _require_fields(resolved_inputs, _REQUIRED_MEASUREMENT_FIELDS, "resolved_compilation_inputs")
+    _require_canonical_decimal(resolved_inputs["target_wpm"], "target_wpm")
     for field in ("target_duration_s", "shot_duration_s"):
-        if field not in resolved_inputs:
-            continue
         values = resolved_inputs[field]
-        if not isinstance(values, list):
-            raise ValueError(f"{field} must be a decimal-v1 array")
+        if not isinstance(values, list) or not values:
+            raise ValueError(f"{field} must be a non-empty decimal-v1 array")
         for index, value in enumerate(values):
             _require_canonical_decimal(value, f"{field}[{index}]")
 

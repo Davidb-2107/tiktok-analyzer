@@ -134,6 +134,20 @@ class PublicationManifestTests(unittest.TestCase):
             payload["runtime"]["resolved_compilation_inputs"][field] = value
             with self.assertRaisesRegex(ValueError, "decimal-v1"):
                 canonical_payload_bytes(payload)
+        # Break caught: accepting a release payload without the required T006 measurements.
+        manifest, _ = manifest_for()
+        for field in ("target_wpm", "target_duration_s", "shot_duration_s"):
+            incomplete = runtime_payload()
+            del incomplete["runtime"]["resolved_compilation_inputs"][field]
+            with self.subTest(missing=field):
+                with self.assertRaisesRegex(ValueError, "missing required fields"):
+                    verify_release(manifest["release_id"], manifest, canonical_json_bytes(incomplete))
+        for field in ("target_duration_s", "shot_duration_s"):
+            empty = runtime_payload()
+            empty["runtime"]["resolved_compilation_inputs"][field] = []
+            with self.subTest(empty=field):
+                with self.assertRaisesRegex(ValueError, "non-empty"):
+                    verify_release(manifest["release_id"], manifest, canonical_json_bytes(empty))
 
     def test_manifest_bytes_are_strictly_parsed_before_release_verification(self) -> None:
         # Break caught: silently normalizing stored manifest bytes before hashing release identity.
@@ -163,9 +177,9 @@ class PublicationManifestTests(unittest.TestCase):
         # Break caught: silently parsing and reserializing stored payload bytes.
         manifest, payload = manifest_for()
         for stored in (
-            b'{ "runtime": {"resolved_compilation_inputs": {}, "cards": [], "channels": [], "formulas": [], "mappings": [], "taxonomy": {"mechanics": [], "realism_values": [], "styles": [], "version": "1.0.0"}}}',
-            b'{"runtime":{"resolved_compilation_inputs":{},"cards":[],"channels":[],"formulas":[],"mappings":[],"taxonomy":{"mechanics":[],"realism_values":[],"styles":[],"version":"1.0.0"},"x":1,"x":2}}',
-            b'{"runtime":{"resolved_compilation_inputs":{},"label":"e\xcc\x81"}}',
+            b'{ "runtime": {"resolved_compilation_inputs": {"target_wpm":"215","target_duration_s":["1.5"],"shot_duration_s":["2.5"]}, "cards": [], "channels": [], "formulas": [], "mappings": [], "taxonomy": {"mechanics": [], "realism_values": [], "styles": [], "version": "1.0.0"}}}',
+            b'{"runtime":{"resolved_compilation_inputs":{"target_wpm":"215","target_duration_s":["1.5"],"shot_duration_s":["2.5"]},"cards":[],"channels":[],"formulas":[],"mappings":[],"taxonomy":{"mechanics":[],"realism_values":[],"styles":[],"version":"1.0.0"},"x":1,"x":2}}',
+            b'{"runtime":{"resolved_compilation_inputs":{"target_wpm":"215","target_duration_s":["1.5"],"shot_duration_s":["2.5"]},"label":"e\xcc\x81"}}',
         ):
             with self.assertRaisesRegex(ValueError, "canonical|duplicate"):
                 verify_release(manifest["release_id"], manifest, stored)
@@ -179,7 +193,7 @@ class PublicationManifestTests(unittest.TestCase):
                 stored = b'{"runtime":' + vector["utf8"].encode("utf-8") + b'}'
             else:
                 number = vector["utf8"].split(":", 1)[1][:-1]
-                stored = b'{"runtime":{"resolved_compilation_inputs":{},"value":' + number.encode("ascii") + b'}}'
+                stored = b'{"runtime":{"resolved_compilation_inputs":{"target_wpm":"215","target_duration_s":["1.5"],"shot_duration_s":["2.5"]},"value":' + number.encode("ascii") + b'}}'
             with self.assertRaisesRegex(ValueError, "canonical|duplicate|number"):
                 verify_release(manifest["release_id"], manifest, stored)
 
