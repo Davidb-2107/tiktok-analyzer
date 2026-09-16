@@ -29,6 +29,7 @@ contract and migration route, not the SaaS implementation itself.
 - [Decide the canonical publication boundary](issues/01-canonical-publication-boundary.md): publish one self-contained project snapshot, consume channel partitions by immutable identity, and embed versioned runtime taxonomy/provenance instead of relying on `VAULT_DIR`.
 - [Decide publication lifecycle and versioning](issues/02-publication-lifecycle-and-versioning.md): a Vault-approved revision is manually published by trusted CI to private immutable R2, consumed by pinned release ID, with separate public-synthetic and private-real verification regimes and exercised recovery.
 - [Decide Analyzer and CI consumption](issues/03-analyzer-and-ci-consumption.md): consumers use mandatory opaque source handles and pinned releases; public/private tests share one module; brief output is byte-identical, and the remaining hub/frames migration uses a separate media artifact store.
+- [Decide channel identity and handle history](issues/04-channel-identity-and-handle-history.md): channel IDs are frozen at first publication, handle history is human-approved and interval-based, cross-release uniqueness lives in an audited identity index, and storage is keyed by channel ID rather than the current handle.
 
 ## Not yet specified
 
