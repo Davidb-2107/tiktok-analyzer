@@ -33,9 +33,10 @@ T005 snapshot manifest
 ├── T006 identity and loader
 └── T007 source adapters and equivalence
 T006 + T007 ──> T008 CI workflow wiring
-T005 + T006 + T008 ──> T009 publisher and recovery
-T007 + T009 ──> T010 Hub/media migration
-T008 + T009 + T010 ──> T011 release hygiene and promotion
+T006 ──> T012 legacy Vault identity migration
+T005 + T006 + T008 + T012 ──> T009 publisher and recovery
+T007 + T009 + T012 ──> T010 Hub/media migration
+T008 + T009 + T010 + T012 ──> T011 release hygiene and promotion
 ```
 
 ## Task index
@@ -78,7 +79,8 @@ fixtures. It does not claim a real private execution.
 
 ### Task 5 — T009: trusted publisher and recovery
 
-Implement the Vault builder, registry adapter, `workflow_dispatch` publisher,
+After T012 has migrated the selected legacy Vault records, implement the Vault
+builder, registry adapter, `workflow_dispatch` publisher,
 identity/freshness index updates, secondary copy, and executable recovery
 runbook. The publisher writes the exact canonical `manifest.json` and
 `payload.json` bytes and verifies both after fetch. Completion requires
@@ -100,6 +102,17 @@ an explicit refspec. Completion requires a PR to `master`, public CI green,
 private gate evidence tied to a pinned release, clean worktrees, and no
 author-machine paths.
 
+### Task 8 — T012: migrate legacy Vault channel identities
+
+Add the frozen `channel_id` to every transcript and channel formula in the
+selected publication scope, matching the existing partition directory or
+formula filename. Preserve historical handles, FORMAT CARD content, mapping
+assignments, and handle-prefixed `subformula_id` values; only the explicit
+identity field may be added. Validate the identity index and record the
+migration commit as the Vault revision consumed by T009. Completion requires
+the real-Vault mapping gate and format-card registry checks to pass with the
+migrated Vault, plus proof that no historical content changed.
+
 ## Plan self-review
 
 - The spec's payload, identity, lifecycle, gates, migration, and acceptance
@@ -111,5 +124,7 @@ author-machine paths.
   publisher/registry writer.
 - T008 can complete with workflow wiring and synthetic CI only; T011 owns the
   first real private-gate execution after T009 produces a pinned release.
+- T012 owns the legacy Vault `channel_id` migration; T009, T010, and T011 may
+  not claim real-source readiness before T012 is resolved.
 - No task uses a silent skip, a machine default, a second mapping copy, or an
   automatic clustering heuristic.
