@@ -23,7 +23,8 @@ and prove restoration from a secondary copy.
 ## Interfaces
 
 The builder consumes an explicit `vault_commit` and authenticated dispatch
-context, then produces the manifest/payload pair required by T005. The
+context, then produces the exact canonical `manifest.json`/`payload.json`
+pair required by T005. The
 registry adapter writes a pinned `release_id`, the identity index, the
 build-time freshness result, and the secondary copy.
 
@@ -32,8 +33,10 @@ build-time freshness result, and the secondary copy.
 - Ordinary Vault pushes never publish snapshots; only the manually dispatched
   trusted workflow can write the registry.
 - The manifest records `vault_commit`, `builder_version`, taxonomy/module and
-  SOT digests, voice-profile digest, build-time freshness, and
+  SOT digests under the T005 field names, voice-profile digest, build-time freshness, and
   `github.actor_id`/`github.actor` as approval provenance.
+- The registry stores the exact canonical manifest and payload bytes and
+  verifies them after fetch; it never parses and reserializes a release.
 - R2 write-once/object-lock prevents replacement of an existing release ID.
 - `current` is an audited alias to a pinned release and is never consumed as
   the runtime source.

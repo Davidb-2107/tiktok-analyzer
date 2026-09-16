@@ -12,7 +12,9 @@
 
 ## Global Constraints
 
-- `release_id` is `sha256(canonical_manifest_without_release_id)`; canonicalization and hash versions are contract fields.
+- `release_id` is `sha256(canonical_manifest_without_release_id)` and
+  `payload_digest` is the SHA-256 digest of the separate canonical runtime
+  payload; canonicalization and hash versions are contract fields.
 - `channel_id` is frozen at first publication, with `handle-slug-v1` or per-channel `opaque-v1`; it is never parsed or regenerated.
 - Every published transcript declares `channel_id`; the loader compares declaration and partition.
 - Only `assigned` mapping rows are routable; `outlier` and `analysis_group_only` remain addressable but non-routable.
@@ -37,11 +39,13 @@ T008 + T009 + T010 ──> T011 release hygiene and promotion
 
 ### Task 1 — T005: snapshot manifest and release identity
 
-Create `publication/manifest.py`, `publication/snapshot.schema.json`, and
-`test_publication_manifest.py`. Implement deterministic canonical bytes,
-non-circular `release_id_for`, payload digest verification, and schema checks.
-Completion requires mutation tests proving that neither a changed manifest nor
-a changed payload can pass under the original pinned release ID.
+Create `publication/manifest.py`, `publication/snapshot.schema.json`, a
+versioned canonicalization-vector file, and `test_publication_manifest.py`.
+Implement the separate canonical runtime payload, non-circular
+`release_id_for`, strict payload/manifest byte checks, and schema checks.
+Completion requires known-answer vectors plus mutation tests proving that
+neither a changed manifest nor a changed payload can pass under the original
+pinned release ID.
 
 ### Task 2 — T006: channel identity registry and loader
 
@@ -55,6 +59,8 @@ Create `publication/source.py`; remove machine defaults from compiler self-check
 entrypoints; compare a draft and release built from the same
 `vault_commit`/`builder_version`. Completion requires byte identity, no absolute
 paths, exact `wpm_source`, and the verbatim poison test.
+The payload must be treated as the compiler's resolved runtime inputs, not as a
+copy of the manifest or a transcript container.
 
 ### Task 4 — T008: public/private mapping CI
 
@@ -68,8 +74,10 @@ fixtures. It does not claim a real private execution.
 
 Implement the Vault builder, registry adapter, `workflow_dispatch` publisher,
 identity/freshness index updates, secondary copy, and executable recovery
-runbook. Completion requires object-lock publication, authenticated approval
-provenance, pinned release verification, and a clean-environment restore test.
+runbook. The publisher writes the exact canonical `manifest.json` and
+`payload.json` bytes and verifies both after fetch. Completion requires
+object-lock publication, authenticated approval provenance, pinned release
+verification, and a clean-environment restore test.
 
 ### Task 6 — T010: Hub read-model and media store
 

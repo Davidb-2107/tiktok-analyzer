@@ -37,41 +37,41 @@ freshness index are mutable, audited registries outside the snapshot.
 
 ## Snapshot contract
 
-The snapshot is one project-level object with channel-scoped records. The
-mapping is stored once at project level and is referenced by channel and video
-scope; it is not duplicated into separate per-channel copies.
+The snapshot is one project-level release with channel-scoped records. It is
+published as two immutable UTF-8 JSON objects: `manifest.json` and
+`payload.json`. The manifest contains release identity and provenance; the
+payload is the canonical serialization of the runtime object. The mapping is
+stored once at project level and is referenced by channel and video scope; it
+is not duplicated into separate per-channel copies.
 
 ```text
-snapshot
-├── project_id
-├── project_id_scheme
-├── release_id
-├── runtime
-│   ├── taxonomy
-│   ├── channels[]
-│   ├── formulas[]
-│   ├── cards[]
-│   ├── mappings[]
-│   └── resolved compilation inputs
-└── provenance
-    ├── vault_commit
-    ├── builder_version
-    ├── taxonomy module digest
-    ├── channel identity history[]
-    ├── SOT versions and digests
-    ├── voice-profile digest
-    └── build-time freshness results
+release
+├── manifest.json
+│   ├── project_id
+│   ├── project_id_scheme
+│   ├── release_id
+│   ├── payload_digest
+│   └── provenance
+└── payload.json
+    └── runtime
+        ├── taxonomy
+        ├── channels[]
+        ├── formulas[]
+        ├── cards[]
+        ├── mappings[]
+        └── resolved compilation inputs
 ```
 
-The exact serialization may evolve, but every implementation must preserve
-these boundaries:
+The full domain schema may evolve, but these wire boundaries and names are
+contractual:
 
-- `runtime` contains only inputs consumed by compilation and the resolved
+- `payload.json` contains only inputs consumed by compilation and the resolved
   values needed by consumers. A runtime channel record contains
   `channel_id`, `channel_id_scheme`, and `current_handle`; identity evidence,
   interval precision, and declaration metadata live under provenance.
-- `provenance` explains which approved source and builder produced the
-  runtime data. Provenance is not a second runtime source of truth.
+- `manifest.json` provenance explains which approved source and builder
+  produced the runtime data. Provenance is not a second runtime source of
+  truth and does not duplicate runtime records.
 - The payload excludes transcript verbatim, raw media, editable Vault prose,
   and other fields not consumed by the compilation path. The Vault retains
   those authoring/backend artifacts under their own policy.
@@ -84,6 +84,35 @@ these boundaries:
   is bumped for allowed-value or validation-behaviour changes. The digest of
   the authoritative taxonomy module is stored beside it because equal value
   arrays do not prove equal module behaviour.
+
+The manifest uses these exact provenance names: `vault_commit`,
+`builder_version`, `taxonomy_module_digest`, `module_digests`,
+`sot_versions`, `voice_profile_digest`, `identity_history`, and
+`build_freshness`. The payload is not duplicated under `manifest.json`.
+
+### Canonical bytes and release identity
+
+`json-c14n-v1` is a versioned restricted JSON encoding, not an implementation
+recipe. Canonical objects have ASCII string keys sorted lexicographically by
+UTF-8 bytes; duplicate keys are rejected. Strings are normalized to Unicode
+NFC. Values are `null`, booleans, integers, arrays, or objects; JSON floats,
+`NaN`, infinities, and negative zero are forbidden. Fractional domain values
+use canonical decimal strings with no exponent, no leading zero, and no
+trailing fractional zero. The output is compact UTF-8 JSON with no optional
+whitespace and no ASCII escaping beyond JSON-required escaping.
+
+The canonicalization vectors are versioned with the implementation and are
+known-answer tests for Unicode normalization, key ordering, integer-vs-float
+rejection, decimal strings, duplicate keys, and exact output bytes. Both
+`manifest.json` and `payload.json` must be stored as those canonical bytes;
+readers reject non-canonical or duplicate-key input rather than silently
+reserializing it.
+
+`payload_digest` is the SHA-256 digest of canonical `payload.json` bytes. The
+`release_id` is the SHA-256 content address of canonical `manifest.json` bytes
+with its own `release_id` field removed. Changing canonicalization, encoding,
+field order, or either hash input is a breaking release-identity change and
+requires a new version and migration rule.
 
 The channel record is therefore represented across the two namespaces without
 duplicating authority: runtime carries the identity needed for compilation and

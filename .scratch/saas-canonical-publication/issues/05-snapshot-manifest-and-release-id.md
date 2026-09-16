@@ -1,6 +1,6 @@
 # T005 — Implement the snapshot manifest and release identity
 
-Status: resolved
+Status: claimed
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T01–T04 resolved
@@ -18,42 +18,65 @@ release without a circular digest check.
 - Create `publication/snapshot.schema.json`.
 - Create `test_publication_manifest.py`.
 
+## Contract revision after review
+
+The first implementation was faithful to the original brief, but the brief
+did not define the hashed payload or an interoperable canonicalization. This
+revision is part of T005 and must land before T009:
+
+- `manifest.json` is the release-identity/provenance object; `payload.json` is
+  a separate immutable canonical JSON object containing `runtime` only. The
+  manifest does not duplicate runtime. `payload_digest` hashes the canonical
+  payload bytes.
+- `json-c14n-v1` is a restricted format: ASCII string keys only, UTF-8-byte
+  lexicographic ordering, NFC strings, no floats/NaN/infinity/negative zero,
+  canonical decimal strings for fractional domain values, compact UTF-8 bytes,
+  and duplicate-key rejection. Both stored objects must already be canonical.
+- Versioned known-answer vectors are required for key order, NFC, numeric
+  rejection/decimal strings, duplicate keys, and exact bytes.
+- Provenance names are exact: `vault_commit`, `builder_version`,
+  `taxonomy_module_digest`, `module_digests`, `sot_versions`,
+  `voice_profile_digest`, `identity_history`, and `build_freshness`.
+
 ## Interfaces
 
 `publication.manifest` exposes:
 
 ```python
 canonical_manifest_bytes(manifest: Mapping[str, object]) -> bytes
+canonical_payload_bytes(payload: Mapping[str, object]) -> bytes
 release_id_for(manifest: Mapping[str, object]) -> str
 payload_digest(payload: bytes) -> str
 verify_release(release_id: str, manifest: Mapping[str, object], payload: bytes) -> None
 ```
 
 `release_id_for` hashes the canonical manifest with its `release_id` field
-removed. Canonical JSON is UTF-8, `sort_keys=True`, compact separators,
-`ensure_ascii=False`, and `allow_nan=False`; the canonicalization and hash
-algorithm versions are explicit manifest fields.
+removed. `verify_release` receives canonical `payload.json` bytes, not an
+unspecified duplicate of the runtime. The canonicalization and hash algorithm
+versions are explicit manifest fields.
 
 ## Acceptance criteria
 
-- The schema requires `project_id`, `project_id_scheme`, `release_id`,
-  `runtime`, and `provenance`.
-- Runtime contains resolved compilation inputs; provenance contains
-  `vault_commit`, `builder_version`, taxonomy/module digests, voice-profile
-  digest, identity history, and build-time freshness.
+- The manifest schema requires `project_id`, `project_id_scheme`,
+  `release_id`, `payload_digest`, and `provenance`; the payload schema requires
+  the runtime object and its resolved compilation inputs.
+- Provenance contains `vault_commit`, `builder_version`,
+  `taxonomy_module_digest`, `module_digests`, `sot_versions`,
+  `voice_profile_digest`, `identity_history`, and `build_freshness`.
 - `verify_release` recomputes the manifest address without trusting the
   embedded `release_id`, then verifies the manifest's payload digest.
 - Any manifest mutation, payload mutation, unsupported schema version, or
   non-canonical release ID fails explicitly.
 - The test suite proves deterministic bytes, non-circular verification,
-  Unicode handling, and rejection of NaN/unsupported values.
+  Unicode NFC handling, duplicate-key rejection, known-answer vectors, and
+  rejection of floats/NaN/unsupported values.
 
 ## Out of scope
 
 R2 upload, Vault reading, identity allocation, SaaS authorization, and brief
 compilation are handled by later tickets.
 
-## Answer
+## Previous implementation record
 
 Implemented in Analyzer commit `42f14fb`:
 

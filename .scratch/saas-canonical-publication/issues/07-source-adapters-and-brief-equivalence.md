@@ -33,6 +33,10 @@ Supported contexts are `local:<draft-path>` and `release:<release_id>`.
 `VAULT_DIR` is accepted only by the builder that creates a local draft; the
 compiler and backend never discover it from their environment.
 
+The adapter supplies the canonical `payload.json` runtime object. It never
+reconstructs fractional values from binary floats, and it preserves the exact
+resolved `wpm_source` string required by the published brief.
+
 ## Acceptance criteria
 
 - Missing or malformed source context fails with an actionable error.
@@ -47,6 +51,9 @@ compiler and backend never discover it from their environment.
   inputs constant and proves identical output; if output changes, the test
   fails.
 - Existing `--channel` and `--cluster` routing behavior remains unchanged.
+- The shared source module reads canonical bytes strictly: duplicate JSON keys
+  and non-canonical manifest/payload bytes fail closed instead of being
+  silently reserialized.
 
 ## Out of scope
 

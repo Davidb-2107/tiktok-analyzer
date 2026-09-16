@@ -34,6 +34,12 @@ frontmatter and compares it with the partition directory. The migration
 builder may write the field for legacy records; runtime loading never infers
 it silently.
 
+The loader consumes the canonical runtime payload produced by T005. Its
+validation must use the checked-in schema as the source for required field
+sets, rather than maintaining a second list of required names in Python.
+Nested taxonomy and channel-record shapes are part of the validation surface;
+presence of only the top-level keys is insufficient.
+
 ## Acceptance criteria
 
 - Existing channels retain `handle[1:]` under `handle-slug-v1` when unused.
@@ -49,6 +55,8 @@ it silently.
 - Existing handle-prefixed `subformula_id` values remain unchanged and opaque.
 - Tests cover `(project_id, channel_id, subformula_id)` uniqueness and the
   channel-scoped video assignment key.
+- Tests prove the runtime schema and validator agree on required fields and
+  reject malformed taxonomy/channel records.
 
 ## Out of scope
 
