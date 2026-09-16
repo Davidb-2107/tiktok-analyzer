@@ -27,11 +27,16 @@ sentinel and assert byte-identical output. A failure means the published
 payload boundary must be reopened. Backend transcript display is not a reason
 to add verbatim text to the Analyzer snapshot.
 
-The consumer must distinguish integrity failure from staleness: a bad content
-hash, schema, taxonomy digest, or malformed snapshot fails closed; a valid but
-older SOT/taxonomy version loads with an explicit machine-readable stale signal
-and no automatic refresh. A separate caller policy may reject stale releases
-for production, but reproducibility must remain possible.
+Control ownership must be explicit. The consumer verifies payload-hash versus
+manifest, schema, internal cross-record consistency, and whether the declared
+version is within its supported compatibility range. A bad hash, schema, or
+malformed snapshot fails closed. The publisher/private CI alone compares the
+snapshot with the current SOT/taxonomy authorities and computes the
+authoritative-module digest; the consumer cannot independently re-run those
+checks after decoupling from the Vault. Publisher-produced freshness results
+are carried as machine-readable manifest fields. A valid but older snapshot
+may load without automatic refresh; a separate caller policy may reject it for
+production while preserving reproducibility.
 
 The public CI must not carry the real-identity denylist. Trusted private CI or
 the Vault pre-push hook performs that scan; public CI enforces only a synthetic

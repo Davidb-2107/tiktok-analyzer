@@ -127,7 +127,10 @@ T02 resolves the publication lifecycle as follows.
   is derived from the canonical manifest serialization; a readable release
   label is separate. The manifest includes `builder_version`, taxonomy
   semantic version plus authoritative-module digest, SOT versions/digests,
-  and per-artifact digests. Consumers verify these offline after fetch.
+  and per-artifact digests. The publisher/ private CI validates the
+  authoritative-module digest and current SOT/taxonomy freshness at build
+  time; consumers verify only the resulting snapshot's internal claims after
+  fetch.
 - `current` is only a human-facing mutable pointer with its own audit trail.
   Runtime consumers pin a `release_id`, never `latest` or `current`, and fail
   closed if the fetched content hash disagrees with the manifest. `VAULT_DIR`
@@ -162,3 +165,8 @@ must be explicitly revisited rather than silently becoming incomplete.
 The approver identity is sourced from the authenticated GitHub Actions actor
 (`github.actor_id` plus `github.actor`) attached to the manual workflow run;
 it is never a free-form manifest field.
+
+Freshness is publisher-owned: private CI compares the approved revision against
+the current SOT/taxonomy authority and records the result in the manifest. A
+consumer cannot infer currentness without those authorities; it may only check
+internal integrity and its supported compatibility range.
