@@ -7,10 +7,10 @@ Blocked by: T006, T007
 
 ## Goal
 
-Close the pre-push CI gap with one parameterized mapping test module: public
-CI validates synthetic fixtures, while trusted Vault/release CI validates the
-approved real snapshot without exposing real identities to public pull
-requests.
+Close the pre-push CI gap with one parameterized mapping test module. This
+ticket wires and validates the public synthetic job and the private gate
+workflow; exercising the private gate against a real pinned release is a
+post-T009 release-readiness action owned by T011.
 
 ## Files
 
@@ -30,16 +30,18 @@ requests.
 - Public fixtures contain only synthetic handles, IDs, and mapping paths.
 - Public CI executes the synthetic mapping suite; it does not skip because a
   real Vault is unavailable.
-- Private Vault/release CI checks out the Analyzer revision under test,
-  supplies an authenticated pinned release, and fails when the real source is
-  absent or malformed.
+- The private Vault/release workflow checks out the Analyzer revision under
+  test and requires an explicit authenticated `release_id` input. If that
+  input or its source is absent, the workflow fails closed; this ticket does
+  not claim that a real release has been exercised.
 - Both regimes execute the same test module; the real-ID assertions are
   selected by explicit private regime configuration, not by a forked file.
 - The private canonical gate has no `skipUnless`/silent skip path.
 - The suite covers assigned, outlier, and analysis-only statuses, channel
   isolation, declared-ID/partition mismatch, and the poison test.
 - A PR to `master` visibly runs the public job; the private result is recorded
-  in the trusted release workflow rather than claimed as public CI.
+  in the trusted release workflow rather than claimed as public CI. The
+  actual private run with a pinned release is recorded by T011 after T009.
 
 ## Out of scope
 

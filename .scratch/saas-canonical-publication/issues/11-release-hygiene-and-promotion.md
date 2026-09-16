@@ -29,8 +29,10 @@ the feature branch without accidentally pushing to `origin/master`.
   `git push origin HEAD:refs/heads/codex/channel-scoped-sourcing` rather than
   a bare `git push`.
 - A pull request targets `master` so the Analyzer CI actually runs.
-- The public mapping job is green, the trusted private gate is recorded, and
-  no claim says that public CI validated the private snapshot.
+- The public mapping job is green.
+- After T009 has produced a real immutable release, the trusted private gate
+  is dispatched with that pinned `release_id`; its evidence is recorded and no
+  claim says that public CI validated the private snapshot.
 - The final worktrees are clean and the exact pushed commit SHAs are recorded.
 
 ## Out of scope

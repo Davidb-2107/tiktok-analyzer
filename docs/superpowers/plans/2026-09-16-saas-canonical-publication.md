@@ -26,10 +26,10 @@
 ```text
 T005 snapshot manifest
 ├── T006 identity and loader
-├── T007 source adapters and equivalence
-└── T009 publisher and recovery
-        └── T010 Hub/media migration
-T006 + T007 ──> T008 public/private CI
+└── T007 source adapters and equivalence
+T006 + T007 ──> T008 CI workflow wiring
+T005 + T006 + T008 ──> T009 publisher and recovery
+T007 + T009 ──> T010 Hub/media migration
 T008 + T009 + T010 ──> T011 release hygiene and promotion
 ```
 
@@ -60,8 +60,9 @@ paths, exact `wpm_source`, and the verbatim poison test.
 
 Add synthetic mapping fixtures and explicit regime selection, wire the public
 workflow, and add the trusted Vault/release workflow using the same test module.
-Completion requires a visible public PR job, a fail-closed private gate, and no
-real identity data in public fixtures.
+Completion requires a visible public PR job, a private workflow that fails
+closed without an explicit release, and no real identity data in public
+fixtures. It does not claim a real private execution.
 
 ### Task 5 — T009: trusted publisher and recovery
 
@@ -79,9 +80,11 @@ proof that the projection carries the snapshot release ID.
 
 ### Task 7 — T011: release hygiene and promotion
 
-Sanitize the two versioned reports, verify all tests and workflow paths, and
-promote with an explicit refspec. Completion requires a PR to `master`, public
-CI green, private gate recorded, clean worktrees, and no author-machine paths.
+Sanitize the two versioned reports, exercise the private workflow with the
+release produced by T009, verify all tests and workflow paths, and promote with
+an explicit refspec. Completion requires a PR to `master`, public CI green,
+private gate evidence tied to a pinned release, clean worktrees, and no
+author-machine paths.
 
 ## Plan self-review
 
@@ -92,5 +95,7 @@ CI green, private gate recorded, clean worktrees, and no author-machine paths.
 - T005 is the only source of canonicalization; T006 is the only source of
   identity validation; T008 is the only CI regime wiring; T009 is the only
   publisher/registry writer.
+- T008 can complete with workflow wiring and synthetic CI only; T011 owns the
+  first real private-gate execution after T009 produces a pinned release.
 - No task uses a silent skip, a machine default, a second mapping copy, or an
   automatic clustering heuristic.
