@@ -395,7 +395,7 @@ def _test_arbitrary_channel_routing():
             'channel: "@alpha"\n---\n', encoding="utf-8"
         )
         _expect_value_error(
-            lambda: bc.load_registry(niche, channel="@alpha"), "incohérents"
+            lambda: bc.load_registry(niche, channel="@alpha"), "channel_id"
         )
         mismatched_card.unlink()
 

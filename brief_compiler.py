@@ -120,12 +120,12 @@ def load_registry(niche, channel=None):
         if "video_url" not in meta:  # fichier non-registre (AGENTS.md, notes...)
             continue
         video_channel = meta.get("channel", "")
-        slug = _channel_slug(video_channel)
+        _channel_slug(video_channel)
         channel_id = meta.get("channel_id")
         if not isinstance(channel_id, str) or not channel_id:
             raise ValueError(
-                f"[{niche}] channel_id déclaré manquant/non canonique; "
-                f"chaîne/répertoire incohérents pour {f} (attendu sous {slug}/)"
+                f"[{niche}] channel_id déclaré manquant/non canonique pour {f}; "
+                "la partition doit utiliser le channel_id déclaré"
             )
         if f.parent.name != channel_id:
             raise ValueError(

@@ -130,12 +130,22 @@ def _validated_history(record: Mapping[str, object]) -> list[tuple[str, tuple[da
 
 
 def validate_channel_record(record: Mapping[str, object]) -> None:
-    """Validate one frozen channel record and its UTC handle history."""
+    """Validate one frozen channel record and its UTC handle history.
+
+    Unknown keys are rejected; the full identity-record field set remains
+    allowed so nested records can carry their allocation provenance.
+    """
     channel = _require_fields(
         record,
         {"channel_id", "channel_id_scheme", "current_handle", "handle_history"},
         "channel record",
     )
+    unexpected = set(channel) - _IDENTITY_FIELDS
+    if unexpected:
+        raise ValueError(
+            "channel record contains unexpected fields: "
+            + ", ".join(sorted(unexpected))
+        )
     _nonempty_string(channel["channel_id"], "channel_id")
     if channel["channel_id_scheme"] not in _CHANNEL_SCHEMES:
         raise ValueError("channel_id_scheme is invalid")
@@ -167,7 +177,12 @@ def _index_records(index: Mapping[str, object]) -> Iterator[Mapping[str, object]
                 raise ValueError("identity project channels must be an array")
             for record in channels:
                 channel = dict(_require_mapping(record, "identity index channel"))
-                channel.setdefault("project_id", project_id)
+                if "project_id" in channel and channel["project_id"] != project_id:
+                    raise ValueError(
+                        "identity index channel project_id conflicts with enclosing project: "
+                        f"{channel['project_id']!r} != {project_id!r}"
+                    )
+                channel["project_id"] = project_id
                 yield channel
         return
     raise ValueError("identity index must contain channels or projects")
@@ -320,6 +335,10 @@ def _validate_runtime_records(
             f"runtime.formulas[{index}]",
         )
         channel_id = _nonempty_string(item["channel_id"], "formula channel_id")
+        if channel_id not in channel_ids:
+            raise ValueError(
+                f"formula channel_id is not declared in runtime.channels: {channel_id}"
+            )
         subformula_id = _nonempty_string(item["subformula_id"], "subformula_id")
         key = (project_id, channel_id, subformula_id)
         if key in formula_keys:
@@ -334,6 +353,10 @@ def _validate_runtime_records(
             f"runtime.mappings[{index}]",
         )
         channel_id = _nonempty_string(item["channel_id"], "mapping channel_id")
+        if channel_id not in channel_ids:
+            raise ValueError(
+                f"mapping channel_id is not declared in runtime.channels: {channel_id}"
+            )
         video_id = _nonempty_string(item["video_id"], "video_id")
         _nonempty_string(item["subformula_id"], "mapping subformula_id")
         key = (project_id, channel_id, video_id)

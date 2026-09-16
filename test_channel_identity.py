@@ -178,6 +178,14 @@ class ChannelIdentityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "current_handle"):
             validate_identity_index(_index(record))
 
+    def test_nested_identity_project_id_must_match_enclosing_project(self):
+        record = _channel()
+        record["project_id"] = "other_project"
+        with self.assertRaisesRegex(ValueError, "project_id"):
+            validate_identity_index(
+                {"projects": {"neon_psycho": {"channels": [record]}}}
+            )
+
     def test_touching_intervals_are_not_overlapping(self):
         history = [
             _history_entry("@alpha", valid_to="2026-02-01T00:00:00Z"),
@@ -220,6 +228,11 @@ class ChannelIdentityTests(unittest.TestCase):
         runtime = _runtime()
         runtime["channels"][0]["channel_id_scheme"] = "project-wide-v1"
         with self.assertRaisesRegex(ValueError, "channel_id_scheme"):
+            validate_runtime_payload(runtime, project_id="neon_psycho")
+
+        runtime = _runtime()
+        runtime["channels"][0]["unexpected"] = True
+        with self.assertRaisesRegex(ValueError, "unexpected"):
             validate_runtime_payload(runtime, project_id="neon_psycho")
 
         with self.assertRaisesRegex(ValueError, "unexpected"):
@@ -290,6 +303,24 @@ class ChannelIdentityTests(unittest.TestCase):
         ]
         with self.assertRaisesRegex(ValueError, "subformula"):
             validate_runtime_payload(duplicate_subformula, project_id="neon_psycho")
+
+    def test_formula_and_mapping_channel_ids_must_be_declared(self):
+        for field, item in (
+            ("formulas", {"channel_id": "missing", "subformula_id": "alpha_01"}),
+            (
+                "mappings",
+                {
+                    "channel_id": "missing",
+                    "video_id": "1234567890123456789",
+                    "subformula_id": "alpha_01",
+                },
+            ),
+        ):
+            runtime = _runtime()
+            runtime[field] = [item]
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, "not declared"):
+                    validate_runtime_payload(runtime, project_id="neon_psycho")
 
     @contextmanager
     def _temporary_transcript(self, *, channel="@old_handle", channel_id="frozen-id"):
@@ -362,8 +393,10 @@ class ChannelIdentityTests(unittest.TestCase):
             card = bc.TRANSCRIPTS / "neon_psycho" / "frozen-id" / "1234567890123456789.md"
             text = card.read_text(encoding="utf-8").replace("channel_id: frozen-id\n", "")
             card.write_text(text, encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "channel_id"):
+            with self.assertRaises(ValueError) as error:
                 bc.load_registry("neon_psycho", channel="@old_handle")
+            self.assertIn("channel_id", str(error.exception))
+            self.assertNotIn("old_handle", str(error.exception))
 
         with self._temporary_transcript(channel_id="frozen-id"):
             card = bc.TRANSCRIPTS / "neon_psycho" / "frozen-id" / "1234567890123456789.md"
