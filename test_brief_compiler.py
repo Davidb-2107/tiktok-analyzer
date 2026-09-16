@@ -248,6 +248,7 @@ def _write_channel_fixture(vault, niche, channel, video_ids, style, realism, hoo
             "---\n"
             f"video_url: https://www.tiktok.com/{channel}/video/{video_id}\n"
             f'channel: "{channel}"\n'
+            f"channel_id: {slug}\n"
             "title: Synthetic channel fixture\n"
             "views: 1\n"
             "---\n\n"

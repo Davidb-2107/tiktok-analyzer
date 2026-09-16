@@ -121,10 +121,16 @@ def load_registry(niche, channel=None):
             continue
         video_channel = meta.get("channel", "")
         slug = _channel_slug(video_channel)
-        if f.parent.name != slug:
+        channel_id = meta.get("channel_id")
+        if not isinstance(channel_id, str) or not channel_id:
             raise ValueError(
-                f"[{niche}] chaîne/répertoire incohérents: {f} "
-                f"(attendu sous {slug}/)"
+                f"[{niche}] channel_id déclaré manquant/non canonique; "
+                f"chaîne/répertoire incohérents pour {f} (attendu sous {slug}/)"
+            )
+        if f.parent.name != channel_id:
+            raise ValueError(
+                f"[{niche}] channel_id/partition incohérents: {f} "
+                f"(déclaré {channel_id!r}, partition {f.parent.name!r})"
             )
         m = re.search(r"## Transcript.*?\n\n(.+?)(?:\n\n## |\Z)", body, re.DOTALL)
         videos.append(
@@ -133,6 +139,7 @@ def load_registry(niche, channel=None):
                 "video_id": f.stem,
                 "url": meta.get("video_url", ""),
                 "channel": video_channel,
+                "channel_id": channel_id,
                 "title": meta.get("title", ""),
                 "views": meta.get("views", 0),
                 "transcript": (m.group(1).strip() if m else ""),
