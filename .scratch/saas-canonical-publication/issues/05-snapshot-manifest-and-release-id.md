@@ -1,6 +1,6 @@
 # T005 — Implement the snapshot manifest and release identity
 
-Status: open
+Status: resolved
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T01–T04 resolved
@@ -52,3 +52,22 @@ algorithm versions are explicit manifest fields.
 
 R2 upload, Vault reading, identity allocation, SaaS authorization, and brief
 compilation are handled by later tickets.
+
+## Answer
+
+Implemented in Analyzer commit `42f14fb`:
+
+- Added the standard-library `publication.manifest` module with deterministic
+  UTF-8 canonical JSON, `sha256:` payload digests, and non-circular release
+  identity derived from the manifest without its embedded `release_id`.
+- Added the v1 snapshot manifest schema with separate runtime/provenance
+  requirements and version markers.
+- Added five focused tests covering deterministic Unicode bytes, release
+  identity, mutation rejection, payload verification, NaN, and unsupported
+  versions.
+
+Verification: `python -m unittest test_publication_manifest.py` passed 5/5;
+the JSON schema parses successfully; independent spec-compliance and task-
+quality review returned PASS/APPROVED with no findings. The existing
+private-Vault gate failure when `VAULT_DIR` is absent is unrelated and remains
+assigned to the later CI/release tickets.
