@@ -17,6 +17,12 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import brief_selfcheck as sc
+from test_source_context import _payload, _write_snapshot
+
+
+def _builder_brief(*args, **kwargs):
+    """Exercise the explicit-VAULT builder seam, not runtime compilation."""
+    return bc._compile_brief_full(*args, **kwargs)[0]
 
 
 def main():
@@ -25,6 +31,13 @@ def main():
     path_before = tuple(sys.path)
     global bc
     import brief_compiler as bc
+    if os.environ.get("VAULT_DIR"):
+        bc.configure_builder_vault(os.environ["VAULT_DIR"])
+
+    _test_explicit_source_contexts()
+    if bc.VAULT is None:
+        print("OK — brief_compiler explicit source-context smoke")
+        return
 
     isolated_fcr = bc._load_fcr_module(bc.FCR_MODULE)
     assert tuple(sys.path) == path_before, "chargement FCR a modifié sys.path"
@@ -41,11 +54,13 @@ def main():
         else:
             raise AssertionError("un module FCR non importable doit lever ImportError")
 
-    target_s, shot_s = sc.load_sot()
+    target_s, shot_s = sc.load_builder_sot(bc.VAULT)
     # The CI fixture uses a synthetic channel; production smoke tests keep the
     # real default while CI declares its fixture-specific value explicitly.
     channel = os.environ.get("FORMAT_CARD_TEST_CHANNEL", "@viraldtoprw")
-    brief = bc.compile_brief("neon_psycho", channel=channel)
+    # The legacy Vault path is exercised as a builder smoke only.  Runtime
+    # compilation is covered above through the explicit snapshot context.
+    brief, _ = bc._compile_brief_full("neon_psycho", channel=channel)
 
     # Le contrat : la sortie valide contre le self-check existant (pas dupliqué).
     sc.validate_structure(brief)
@@ -182,6 +197,147 @@ def main():
     )
 
 
+def _source_payload():
+    payload = _payload()
+    runtime = payload["runtime"]
+    video_ids = ("111111111111111111", "222222222222222222")
+    runtime.update(
+        {
+            "channels": [
+                {
+                    "channel_id": "alpha",
+                    "channel_id_scheme": "handle-slug-v1",
+                    "current_handle": "@alpha",
+                    "handle_history": [
+                        {
+                            "handle": "@alpha",
+                            "valid_from": "2026-01-01T00:00:00Z",
+                            "valid_to": None,
+                            "valid_from_precision": "exact",
+                            "valid_to_precision": "approximate",
+                            "evidence": "fixture",
+                            "declared_by": "fixture",
+                            "declared_at": "2026-01-01T00:00:00Z",
+                        }
+                    ],
+                }
+            ],
+            "formulas": [
+                {
+                    "channel_id": "alpha",
+                    "subformula_id": "alpha_main",
+                    "ref": "Projects/Sourcing/formats/source_fixture/alpha.md",
+                    "text": (
+                        "## Constant\n- **camera**: fixed AI close-up\n- **cta**: follow\n\n"
+                        "## Slots variables\n- topic\n- audience\n\n"
+                        "## Hook template\n```\ntext-tease <bold claim>\n```\n"
+                    ),
+                }
+            ],
+            "cards": [
+                {
+                    "channel_id": "alpha",
+                    "video_id": video_id,
+                    "url": f"https://www.tiktok.com/@alpha/video/{video_id}",
+                    "title": "Synthetic source fixture",
+                    "views": 1,
+                    "ref": f"Projects/Sourcing/transcripts/source_fixture/alpha/{video_id}.md",
+                    "card_inspect": {
+                        "n_sections": 1,
+                        "valid": True,
+                        "errors": [],
+                        "card": {
+                            "fields": {
+                                "video_style": "AI animation",
+                                "realism": 5,
+                                "hook_mechanic": "text-tease",
+                            }
+                        },
+                    },
+                }
+                for video_id in video_ids
+            ],
+            "mappings": [
+                {
+                    "channel_id": "alpha",
+                    "video_id": video_id,
+                    "subformula_id": "alpha_main",
+                    "status": "assigned",
+                }
+                for video_id in video_ids
+            ],
+            "voice_id": "fixture_voice",
+            "wpm_source": "measured corpus: exact provenance",
+        }
+    )
+    runtime["resolved_compilation_inputs"] = {
+        "target_wpm": "215",
+        "target_duration_s": ["62", "75"],
+        "shot_duration_s": ["1.5", "4"],
+    }
+    return payload
+
+
+def _test_explicit_source_contexts():
+    # Break caught: falling back to a machine Vault or compiling draft/release differently.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        payload = _source_payload()
+        manifest, _ = _write_snapshot(root / "draft", payload, project_id="source_fixture")
+        release_dir = root / "releases" / "sha256" / manifest["release_id"].split(":", 1)[1]
+        release_manifest, _ = _write_snapshot(
+            release_dir, payload, project_id="source_fixture"
+        )
+        for field in ("vault_commit", "builder_version"):
+            assert manifest["provenance"][field] == release_manifest["provenance"][field]
+
+        poison = (
+            root
+            / "draft"
+            / "Projects"
+            / "Sourcing"
+            / "transcripts"
+            / "source_fixture"
+            / "alpha"
+            / "111111111111111111.md"
+        )
+        poison.parent.mkdir(parents=True)
+        poison.write_text("DO NOT COPY THIS VERBATIM", encoding="utf-8")
+        kwargs = {
+            "channel": "@alpha",
+            "cluster": "alpha_main",
+        }
+        local = bc.compile_brief(
+            "source_fixture",
+            source_context=f"local:{root / 'draft'}",
+            **kwargs,
+        )
+        poison.write_text("A DIFFERENT VERBATIM SENTINEL", encoding="utf-8")
+        local_after_poison = bc.compile_brief(
+            "source_fixture",
+            source_context=f"local:{root / 'draft'}",
+            **kwargs,
+        )
+        release = bc.compile_brief(
+            "source_fixture",
+            source_context=f"release:{manifest['release_id']}",
+            release_root=root / "releases",
+            **kwargs,
+        )
+        assert sc.load_sot(f"local:{root / 'draft'}") == ([62.0, 75.0], [1.5, 4.0])
+        sc.main(f"local:{root / 'draft'}")
+
+        encode = lambda value: json.dumps(value, ensure_ascii=False, indent=2).encode(
+            "utf-8"
+        )
+        local_bytes = encode(local)
+        assert local_bytes == encode(local_after_poison)
+        assert local_bytes == encode(release)
+        assert local["script"]["wpm_source"] == "measured corpus: exact provenance"
+        assert str(root).encode() not in local_bytes
+        assert b"VERBATIM SENTINEL" not in local_bytes
+
+
 def _card(style="AI animation", realism="5", hook="text-tease"):
     return (
         "## FORMAT CARD — @x — url\n"
@@ -211,8 +367,8 @@ def _test_channel_formula_routing(channel):
     else:
         raise AssertionError("une chaîne sans @ doit être rejetée")
 
-    brief_ci = bc.compile_brief("neon_psycho", channel="@ci")
-    brief_b = bc.compile_brief("neon_psycho", channel="@fixture_b")
+    brief_ci = _builder_brief("neon_psycho", channel="@ci")
+    brief_b = _builder_brief("neon_psycho", channel="@fixture_b")
     assert brief_ci["source"]["channel"] == "@ci"
     assert brief_b["source"]["channel"] == "@fixture_b"
     assert "/ci/" in brief_ci["source"]["format_card_ref"]
@@ -359,7 +515,7 @@ def _test_arbitrary_channel_routing():
             assert all(channel in message for channel, *_ in channels)
         else:
             raise AssertionError("un registre multi-chaînes doit exiger --channel")
-        _expect_value_error(lambda: bc.compile_brief(niche), "utilisez --channel")
+        _expect_value_error(lambda: bc._compile_brief_full(niche), "utilisez --channel")
         _expect_value_error(
             lambda: bc.load_registry(niche, channel="@Alpha"), "non canonique"
         )
@@ -370,8 +526,8 @@ def _test_arbitrary_channel_routing():
             lambda: bc.load_registry(niche, channel="@unknown"), "chaîne introuvable"
         )
 
-        alpha = bc.compile_brief(niche, channel="@alpha")
-        beta = bc.compile_brief(niche, channel="@beta")
+        alpha = _builder_brief(niche, channel="@alpha")
+        beta = _builder_brief(niche, channel="@beta")
         assert alpha["source"]["channel"] == "@alpha"
         assert beta["source"]["channel"] == "@beta"
         assert (alpha["format"]["style"], alpha["format"]["realism"], alpha["format"]["hook_mechanic"]) == (
@@ -799,7 +955,7 @@ def _test_strict_synthetic_cases():
 def _test_strict_vs_permissive(brief, card_report, channel):
     # Le mode permissif accepte le rapport réel, quelle que soit l'évolution
     # du registre.
-    bc.compile_brief("neon_psycho", channel=channel, strict=False)  # ne lève pas
+    _builder_brief("neon_psycho", channel=channel, strict=False)  # ne lève pas
 
     expected_strict_failure = (
         card_report["n_valid"] != card_report["n_videos"]
@@ -807,7 +963,7 @@ def _test_strict_vs_permissive(brief, card_report, channel):
     )
     strict_error = None
     try:
-        bc.compile_brief("neon_psycho", channel=channel, strict=True)
+        _builder_brief("neon_psycho", channel=channel, strict=True)
     except ValueError as exc:
         strict_error = str(exc)
     if expected_strict_failure:

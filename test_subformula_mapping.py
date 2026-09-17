@@ -8,6 +8,9 @@ from pathlib import Path
 
 import brief_compiler as bc
 
+if os.environ.get("VAULT_DIR"):
+    bc.configure_builder_vault(os.environ["VAULT_DIR"])
+
 
 HEADING = "## Décision — mapping canonique vidéo → sous-formula"
 HEADER = (
@@ -497,7 +500,11 @@ class SubformulaMappingTests(unittest.TestCase):
                 for subformula_id, (_ids, status) in assignments.items()
                 if status == "assigned"
             )
-            brief = bc.compile_brief("neon_psycho", channel=channel, cluster=cluster)
+            # T008 will replace this builder smoke with the pinned private
+            # release context.  Keep the current real-Vault gate explicit.
+            brief, _ = bc._compile_brief_full(
+                "neon_psycho", channel=channel, cluster=cluster
+            )
             slug = channel[1:]
             self.assertEqual(brief["source"]["channel"], channel)
             self.assertEqual(

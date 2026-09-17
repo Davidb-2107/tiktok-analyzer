@@ -1,6 +1,6 @@
 # T007 — Add explicit source adapters and draft/release equivalence
 
-Status: open
+Status: resolved
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T005, T006
@@ -64,3 +64,22 @@ schema, so the internal payload representation does not change brief output.
 
 Publisher workflow, R2 credentials, public/private CI wiring, and `/hub`
 migration are handled by T008–T010.
+
+## Answer
+
+Implemented explicit `local:<draft-path>` and `release:<release_id>` source
+adapters, strict snapshot verification, byte-equivalence coverage, exact
+`wpm_source` preservation, transcript-poison protection, required resolved
+measurements, and absolute-path rejection. Runtime compilation no longer
+discovers `VAULT_DIR`; the remaining Vault path is an explicit builder-only
+seam.
+
+The builder-only seam is transitional: after T009 publishes the first real
+release, T008 switches the mapping gate to the pinned `release:` context and
+the legacy Vault compilation seam is removed before final promotion. It is not
+a second runtime source.
+
+Independent adversarial review: PASS, no remaining findings. Verification:
+37 focused source/identity/manifest tests, 23/23 real-Vault mapping tests with
+the T012 migration, fixture and real-Vault compiler smoke tests, and
+`git diff --check`.
