@@ -16,8 +16,8 @@ services:
       - tiktok_temp:/app/temp
       - tiktok_hf_cache:/root/.cache/huggingface
       # Pinned text releases and frame artifacts are separate read-only stores.
-      # No Vault is mounted. Media retention/GC is operator-owned and must not
-      # be inferred from snapshot publication or deletion.
+      # No Vault is mounted. Media retention/GC is governed by
+      # docs/runbooks/hub-media-retention.md, not snapshot publication/deletion.
       - type: bind
         source: "${HUB_RELEASE_HOST_ROOT:?set HUB_RELEASE_HOST_ROOT}"
         target: /hub/releases
