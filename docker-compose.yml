@@ -1,10 +1,13 @@
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./publication:/app/publication:ro
       - ./temp:/app/temp
       - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
       - ${SCRIPT_INBOX_HOST:-./script_inbox}:/inbox/scripts
@@ -16,13 +19,16 @@ services:
         source: "${SOURCING_HOST_DIR:-C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude/Projects/Sourcing}"
         target: /sourcing
         read_only: false
-      # Local dev only — vault racine en lecture seule pour le Niche Hub
-      # (GET /hub). Jamais dans docker-compose.prod.yml : sans ce mount,
-      # /hub répond 404 (garde VAULT_DIR). The host path is explicit because
-      # the repository is maintained outside the Obsidian vault.
+      # Hub draft snapshots are explicit local inputs, never an implicit Vault.
       - type: bind
-        source: "${VAULT_HOST_DIR:-C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude}"
-        target: /vault
+        source: "${HUB_DRAFT_HOST_ROOT:-./hub-draft}"
+        target: /hub/draft
+        read_only: true
+      # Frame artifacts outlive/expire independently of text snapshots. The
+      # operator owns retention and must preserve <opaque-id>.<image-extension>.
+      - type: bind
+        source: "${HUB_MEDIA_HOST_ROOT:-./hub-media}"
+        target: /hub/media
         read_only: true
     env_file:
       - .env
@@ -34,7 +40,10 @@ services:
       - SCRIPT_INBOX_DIR=/inbox/scripts
       - INBOX_PSYCHO=${INBOX_PSYCHO:-/inbox/scripts}
       - INBOX_ARCHIVE=${INBOX_ARCHIVE:-}
-      - VAULT_DIR=/vault
+      - HUB_ROUTE_ENABLED=${HUB_ROUTE_ENABLED:-false}
+      - HUB_PROFILE=local
+      - HUB_SOURCE_CONTEXT=${HUB_SOURCE_CONTEXT:-local:/hub/draft}
+      - HUB_MEDIA_ROOT=/hub/media
       - VEILLE_WEBHOOK_URL=${VEILLE_WEBHOOK_URL:-}
       - VEILLE_WEBHOOK_SECRET=${VEILLE_WEBHOOK_SECRET:-}
     restart: unless-stopped
