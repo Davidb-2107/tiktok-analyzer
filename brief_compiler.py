@@ -12,7 +12,8 @@ brief.schema.json. Aucune constante de prod locale :
     les fichiers registre par-vidéo quand elles existent ; sinon inférence
     mots-clés sur la prose de la formula (fallback)
 
-Usage :  python brief_compiler.py <niche> [--channel CHANNEL] [--voice ALIAS] [--language fr]
+Usage :  python brief_compiler.py <niche> [--channel CHANNEL] [--cluster SUBFORMULA] [--voice ALIAS] [--language fr]
+                                   --source local:<draft>|release:<id>
                                    [--out brief_<niche>[_<channel>].json]
 Self-check : python test_brief_compiler.py
 """
@@ -27,26 +28,21 @@ import unicodedata
 from collections import Counter
 from pathlib import Path
 
-import brief_selfcheck as sc  # VAULT, load_sot, validate_* — le contrat existant
+import brief_selfcheck as sc  # snapshot validation plus explicit builder seam
+from publication.source import parse_source_context, resolve_source
 
 HERE = Path(__file__).resolve().parent
-TRANSCRIPTS = sc.VAULT / "Projects" / "Sourcing" / "transcripts"
-FORMATS = sc.VAULT / "Projects" / "Sourcing" / "formats"
-FRAMES = sc.VAULT / "Projects" / "Sourcing" / "frames"
-ENGINE_FACTS = sc.VAULT / "Shared" / "ENGINE-FACTS.md"
-VOICE_CAL = sc.VAULT / "Shared" / "voice-calibration"
+VAULT = None
+TRANSCRIPTS = None
+FORMATS = None
+FRAMES = None
+ENGINE_FACTS = None
+VOICE_CAL = None
 
 # taxonomie STYLES/MECHANICS/REALISM_VALUES + parse_card/inspect_file : SOT
 # partagée (Task 1) — pas de copie locale, pas de deuxième regex bornée.
-FCR_TOOLS = sc.VAULT / "Projects" / "Sourcing" / "tools"
-FCR_MODULE = FCR_TOOLS / "format_card_registry.py"
-if not FCR_MODULE.is_file():
-    raise ModuleNotFoundError(
-        "Validateur FORMAT CARD introuvable : module attendu ici "
-        f"{FCR_MODULE} (vault configuré : {sc.VAULT}). "
-        "La validation des cards ne peut pas continuer ; vérifiez que le module "
-        "du vault Projects/Sourcing/tools est présent."
-    )
+FCR_TOOLS = None
+FCR_MODULE = None
 
 
 def _load_fcr_module(module_path):
@@ -71,16 +67,38 @@ def _load_fcr_module(module_path):
     return module
 
 
-try:
+class _UnavailableFcr:
+    @staticmethod
+    def inspect_file(_path):
+        raise ValueError("FORMAT CARD validation requires an explicit VAULT_DIR")
+
+    @staticmethod
+    def parse_card(_text):
+        raise ValueError("FORMAT CARD validation requires an explicit VAULT_DIR")
+
+
+fcr = _UnavailableFcr()
+
+
+def configure_builder_vault(vault_root):
+    """Configure the legacy Vault reader explicitly for the builder only."""
+    global VAULT, TRANSCRIPTS, FORMATS, FRAMES, ENGINE_FACTS, VOICE_CAL
+    global FCR_TOOLS, FCR_MODULE, fcr
+    global_value = Path(vault_root).expanduser().resolve()
+    if not global_value.is_dir():
+        raise ValueError(f"builder Vault root is unavailable: {global_value}")
+    VAULT = global_value
+    TRANSCRIPTS = VAULT / "Projects" / "Sourcing" / "transcripts"
+    FORMATS = VAULT / "Projects" / "Sourcing" / "formats"
+    FRAMES = VAULT / "Projects" / "Sourcing" / "frames"
+    ENGINE_FACTS = VAULT / "Shared" / "ENGINE-FACTS.md"
+    VOICE_CAL = VAULT / "Shared" / "voice-calibration"
+    FCR_TOOLS = VAULT / "Projects" / "Sourcing" / "tools"
+    FCR_MODULE = FCR_TOOLS / "format_card_registry.py"
+    if not FCR_MODULE.is_file():
+        raise ImportError(f"FORMAT CARD validator is unavailable: {FCR_MODULE}")
     fcr = _load_fcr_module(FCR_MODULE)
-except ImportError:
-    raise
-except Exception as exc:
-    raise ImportError(
-        "Impossible d'importer le validateur FORMAT CARD du vault. "
-        f"Chemin attendu : {FCR_MODULE} ; contexte : brief_compiler.py "
-        "en dépend pour inspecter et valider les cards, sans fallback silencieux."
-    ) from exc
+    sc.VAULT = VAULT
 
 
 # --- parsing registre ---------------------------------------------------------
@@ -110,6 +128,8 @@ def _channel_slug(channel):
 
 def load_registry(niche, channel=None):
     """Charge le registre, éventuellement limité à une chaîne exacte."""
+    if TRANSCRIPTS is None or fcr is None:
+        raise ValueError("legacy Vault compilation requires an explicit VAULT_DIR")
     d = TRANSCRIPTS / niche
     assert d.is_dir(), f"registre introuvable: {d}"
     if channel is not None:
@@ -120,11 +140,17 @@ def load_registry(niche, channel=None):
         if "video_url" not in meta:  # fichier non-registre (AGENTS.md, notes...)
             continue
         video_channel = meta.get("channel", "")
-        slug = _channel_slug(video_channel)
-        if f.parent.name != slug:
+        _channel_slug(video_channel)
+        channel_id = meta.get("channel_id")
+        if not isinstance(channel_id, str) or not channel_id:
             raise ValueError(
-                f"[{niche}] chaîne/répertoire incohérents: {f} "
-                f"(attendu sous {slug}/)"
+                f"[{niche}] channel_id déclaré manquant/non canonique pour {f}; "
+                "la partition doit utiliser le channel_id déclaré"
+            )
+        if f.parent.name != channel_id:
+            raise ValueError(
+                f"[{niche}] channel_id/partition incohérents: {f} "
+                f"(déclaré {channel_id!r}, partition {f.parent.name!r})"
             )
         m = re.search(r"## Transcript.*?\n\n(.+?)(?:\n\n## |\Z)", body, re.DOTALL)
         videos.append(
@@ -133,6 +159,7 @@ def load_registry(niche, channel=None):
                 "video_id": f.stem,
                 "url": meta.get("video_url", ""),
                 "channel": video_channel,
+                "channel_id": channel_id,
                 "title": meta.get("title", ""),
                 "views": meta.get("views", 0),
                 "transcript": (m.group(1).strip() if m else ""),
@@ -144,7 +171,7 @@ def load_registry(niche, channel=None):
                 # n_sections/valid/errors/card (fields) -> inspect_cards() n'a plus
                 # besoin de reparser le texte via fcr.parse_card en double.
                 "card_inspect": fcr.inspect_file(f),
-                "ref": f"Projects/Sourcing/transcripts/{niche}/{slug}/{f.name}",
+                "ref": f"Projects/Sourcing/transcripts/{niche}/{channel_id}/{f.name}",
             }
         )
     channels = sorted({v["channel"] for v in videos if v["channel"]})
@@ -166,24 +193,28 @@ def load_registry(niche, channel=None):
 
 def find_formula(videos):
     """Retrouve l'unique formula couvrant toute la sélection de vidéos."""
-    channels = {v.get("channel") for v in videos}
-    if len(channels) != 1:
-        raise ValueError("sélection multi-chaînes: utilisez --channel")
-    channel = channels.pop()
-    _channel_slug(channel)
+    channel_ids = {v.get("channel_id") for v in videos}
+    channel_id = next(iter(channel_ids), None)
+    if len(channel_ids) != 1 or not isinstance(channel_id, str) or not channel_id:
+        raise ValueError(
+            "sélection multi-chaînes ou channel_id manquant: utilisez --channel"
+        )
     ids = {v["video_id"] for v in videos}
     candidates = []
     partial = []
     for f in sorted((FORMATS / videos[0].get("niche", "")).glob("*.md")):
         text = f.read_text(encoding="utf-8")
-        formula_channel = parse_frontmatter(text)[0].get("channel", "")
-        formula_slug = _channel_slug(formula_channel)
-        if f.stem != formula_slug:
+        formula_channel_id = parse_frontmatter(text)[0].get("channel_id")
+        if not isinstance(formula_channel_id, str) or not formula_channel_id:
             raise ValueError(
-                f"[{videos[0]['niche']}] chaîne/fichier formula incohérents: {f} "
-                f"(attendu: {formula_slug}.md)"
+                f"[{videos[0]['niche']}] channel_id formula non canonique: {f}"
             )
-        if formula_slug != _channel_slug(channel):
+        if f.stem != formula_channel_id:
+            raise ValueError(
+                f"[{videos[0]['niche']}] channel_id/fichier formula incohérents: {f} "
+                f"(déclaré: {formula_channel_id}.md)"
+            )
+        if formula_channel_id != channel_id:
             continue
         formula_ids = set(re.findall(r"(?<!\d)\d{18,20}(?!\d)", text))
         if ids <= formula_ids:
@@ -201,6 +232,264 @@ def find_formula(videos):
     if candidates:
         return candidates[0]
     return None, None
+
+
+SUBFORMULA_MAPPING_HEADING = "Décision — mapping canonique vidéo → sous-formula"
+SUBFORMULA_MAPPING_COLUMNS = (
+    "Video ID",
+    "Chaîne",
+    "Video style",
+    "Realism",
+    "Hook mechanic",
+    "Angle / promesse",
+    "Progression → payoff",
+    "Affectation",
+)
+SUBFORMULA_ASSIGNMENTS = {"outlier", "outlier_no_formula"}
+
+
+def _mapping_row(line, line_number, mapping_path):
+    stripped = line.strip()
+    if not (stripped.startswith("|") and stripped.endswith("|")):
+        raise ValueError(
+            f"mapping row malformed in {mapping_path}:{line_number}: "
+            "expected a pipe-delimited Markdown row"
+        )
+    cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+    if len(cells) != len(SUBFORMULA_MAPPING_COLUMNS):
+        raise ValueError(
+            f"mapping row malformed in {mapping_path}:{line_number}: "
+            f"expected {len(SUBFORMULA_MAPPING_COLUMNS)} cells, got {len(cells)}"
+        )
+    if any(not cell for cell in cells):
+        raise ValueError(
+            f"mapping row malformed in {mapping_path}:{line_number}: empty cell"
+        )
+    return cells
+
+
+def _mapping_value(value):
+    value = value.strip()
+    if value.startswith("`") and value.endswith("`"):
+        value = value[1:-1].strip()
+    return value
+
+
+def _read_subformula_table(text, mapping_path):
+    heading = rf"^## {re.escape(SUBFORMULA_MAPPING_HEADING)}\s*$"
+    section_matches = list(re.finditer(heading, text, re.MULTILINE))
+    if len(section_matches) != 1:
+        raise ValueError(
+            "approved subformula mapping requires exactly one canonical mapping "
+            f"section in {mapping_path}; found {len(section_matches)} headings named "
+            f"'## {SUBFORMULA_MAPPING_HEADING}'"
+        )
+    section_match = re.search(
+        heading + r"\n(.*?)(?=^## |\Z)",
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+
+    lines = section_match.group(1).splitlines()
+    header_indexes = []
+    for index, line in enumerate(lines):
+        if line.strip().startswith("|"):
+            cells = _mapping_row(line, index + 1, mapping_path)
+            if tuple(_mapping_value(cell) for cell in cells) == SUBFORMULA_MAPPING_COLUMNS:
+                header_indexes.append(index)
+    if len(header_indexes) != 1:
+        raise ValueError(
+            f"approved subformula mapping table missing or duplicated in {mapping_path}"
+        )
+
+    header_index = header_indexes[0]
+    separator_index = header_index + 1
+    if separator_index >= len(lines):
+        raise ValueError(f"mapping table malformed in {mapping_path}: missing separator")
+    separator = _mapping_row(lines[separator_index], separator_index + 1, mapping_path)
+    if any(not re.fullmatch(r":?-{3,}:?", cell.replace(" ", "")) for cell in separator):
+        raise ValueError(f"mapping table malformed in {mapping_path}: invalid separator")
+
+    rows = []
+    for index, line in enumerate(lines[separator_index + 1 :], separator_index + 2):
+        if not line.strip():
+            if rows:
+                break
+            continue
+        if "|" in line:
+            rows.append(_mapping_row(line, index, mapping_path))
+        elif rows:
+            break
+    if not rows:
+        raise ValueError(f"mapping table missing rows in {mapping_path}")
+    return rows
+
+
+def _subformula_assignment(value, mapping_path, line_number):
+    raw_value = value.strip()
+    if raw_value.startswith("`") and raw_value.endswith("`"):
+        raw_value = raw_value[1:-1].strip()
+    analysis_group_only = raw_value.endswith("*")
+    if analysis_group_only:
+        raw_value = raw_value[:-1].strip()
+    assignment = _mapping_value(raw_value)
+    if assignment in SUBFORMULA_ASSIGNMENTS:
+        if analysis_group_only:
+            raise ValueError(
+                f"unknown assignment status in {mapping_path}:{line_number}: {value!r}"
+            )
+        return assignment, "outlier"
+    if assignment == "analysis_group_only":
+        return assignment, "analysis_group_only"
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9_]*[a-z0-9])?", assignment):
+        raise ValueError(
+            f"unknown assignment status in {mapping_path}:{line_number}: {value!r}"
+        )
+    return assignment, "analysis_group_only" if analysis_group_only else "assigned"
+
+
+def _mapping_path(ref):
+    if not isinstance(ref, str) or not ref.strip():
+        raise ValueError("selected channel formula missing subformula_mapping_ref")
+    vault_root = sc.VAULT or VAULT
+    if vault_root is None:
+        raise ValueError("subformula mapping requires an explicit VAULT_DIR")
+    vault = vault_root.resolve()
+    path = (vault / ref).resolve()
+    try:
+        path.relative_to(vault)
+    except ValueError as exc:
+        raise ValueError(
+            f"subformula_mapping_ref escapes configured Vault: {ref!r}"
+        ) from exc
+    if not path.is_file():
+        raise ValueError(f"subformula mapping file missing: {path}")
+    return path
+
+
+def load_subformula_mapping(videos):
+    """Load the approved mapping for one already channel-scoped selection.
+
+    The referenced note's complete table is validated before rows for the
+    selected channel are returned. Other-channel rows are valid parts of the
+    shared canonical note, but can never satisfy a selected channel's videos.
+    """
+    if not videos:
+        raise ValueError("subformula mapping requires a non-empty channel selection")
+    channels = {video.get("channel") for video in videos}
+    if len(channels) != 1:
+        raise ValueError("subformula mapping requires exactly one selected channel")
+    channel = channels.pop()
+    _channel_slug(channel)
+    niches = {video.get("niche") for video in videos}
+    if len(niches) != 1 or None in niches:
+        raise ValueError("subformula mapping requires exactly one selected niche")
+    niche = niches.pop()
+
+    formula_path, formula_text = find_formula(videos)
+    if formula_path is None:
+        raise ValueError(
+            f"[{niche}] CHANNEL FORMULA introuvable for selected channel {channel}"
+        )
+    formula_meta, _ = parse_frontmatter(formula_text)
+    mapping_path = _mapping_path(formula_meta.get("subformula_mapping_ref"))
+    mapping_text = mapping_path.read_text(encoding="utf-8")
+    mapping_meta, _ = parse_frontmatter(mapping_text)
+    if mapping_meta.get("niche") != niche:
+        raise ValueError(
+            f"subformula mapping niche mismatch in {mapping_path}: "
+            f"expected {niche!r}, got {mapping_meta.get('niche')!r}"
+        )
+    rows = _read_subformula_table(mapping_text, mapping_path)
+
+    records = []
+    seen_ids = {}
+    for index, cells in enumerate(rows, 1):
+        video_id = _mapping_value(cells[0])
+        if not re.fullmatch(r"\d{18,20}", video_id):
+            raise ValueError(
+                f"mapping row malformed in {mapping_path}: invalid video ID {video_id!r}"
+            )
+        row_channel = _mapping_value(cells[1])
+        _channel_slug(row_channel)
+        assignment, status = _subformula_assignment(cells[7], mapping_path, index)
+        if video_id in seen_ids:
+            previous = seen_ids[video_id]
+            if previous["channel"] != row_channel:
+                raise ValueError(
+                    f"cross-channel video ID in {mapping_path}: {video_id} is mapped to "
+                    f"{previous['channel']} and {row_channel}"
+                )
+            raise ValueError(f"duplicate video ID in {mapping_path}: {video_id}")
+        record = {
+            "niche": niche,
+            "channel": row_channel,
+            "video_id": video_id,
+            "subformula_id": assignment,
+            "status": status,
+        }
+        records.append(record)
+        seen_ids[video_id] = record
+
+    expected_ids = [video["video_id"] for video in videos]
+    if len(set(expected_ids)) != len(expected_ids):
+        raise ValueError(f"duplicate selected video ID for {channel}: {expected_ids}")
+    selected = [record for record in records if record["channel"] == channel]
+    selected_ids = {record["video_id"] for record in selected}
+    expected_set = set(expected_ids)
+    foreign_selected = [
+        video_id
+        for video_id in expected_set
+        if video_id in seen_ids and seen_ids[video_id]["channel"] != channel
+    ]
+    if foreign_selected:
+        raise ValueError(
+            f"cross-channel mapping rows for selected channel {channel}: "
+            + ", ".join(sorted(foreign_selected))
+        )
+    missing = expected_set - selected_ids
+    extra = selected_ids - expected_set
+    if missing:
+        raise ValueError(
+            f"missing mapping rows for {niche}/{channel}: {', '.join(sorted(missing))}"
+        )
+    if extra:
+        raise ValueError(
+            f"unexpected mapping rows for {niche}/{channel}: {', '.join(sorted(extra))}"
+        )
+
+    counts = Counter(
+        (record["channel"], record["subformula_id"])
+        for record in records
+        if record["status"] != "outlier"
+    )
+    undersized = [
+        f"{group[0]}:{group[1]} ({count} video)"
+        for group, count in counts.items()
+        if count < 2
+    ]
+    if undersized:
+        raise ValueError(
+            f"subformula mapping groups require at least two videos: {', '.join(undersized)}"
+        )
+    return selected
+
+
+def route_subformula(videos, cluster):
+    """Return the approved production sub-formula from one channel selection."""
+    records = load_subformula_mapping(videos)
+    matches = [record for record in records if record["subformula_id"] == cluster]
+    if not matches:
+        raise ValueError(f"unknown subformula for selected channel: {cluster!r}")
+    statuses = {record["status"] for record in matches}
+    if statuses == {"analysis_group_only"}:
+        raise ValueError(f"subformula is analysis_group_only, not production: {cluster}")
+    if statuses == {"outlier"}:
+        raise ValueError(f"subformula is an outlier, not production: {cluster}")
+    if statuses != {"assigned"}:
+        raise ValueError(f"ambiguous subformula assignment for selected channel: {cluster}")
+    ids = {record["video_id"] for record in matches}
+    return [video for video in videos if video["video_id"] in ids]
 
 
 # --- formula -> champs format -------------------------------------------------
@@ -550,12 +839,207 @@ def build_shots(beats, shot_s):
 
 
 # --- compilation --------------------------------------------------------------
-def compile_brief(niche, voice=None, language="fr", strict=False, channel=None):
+def compile_brief(
+    niche,
+    voice=None,
+    language="fr",
+    strict=False,
+    channel=None,
+    cluster=None,
+    source_context=None,
+    release_root=None,
+):
     """Compile un brief exécutable ; lève ValueError en --strict (cf. plus bas)."""
-    brief, _card_report = _compile_brief_full(
-        niche, voice, language, strict, channel=channel
+    if cluster is not None and not channel:
+        raise ValueError("--cluster requires --channel")
+    if source_context is None:
+        raise ValueError("source context is required (local:<path> or release:<release_id>)")
+    brief, _card_report = _compile_snapshot_brief(
+        niche,
+        source_context,
+        release_root=release_root,
+        language=language,
+        strict=strict,
+        channel=channel,
+        cluster=cluster,
     )
     return brief
+
+
+def _compile_snapshot_brief(
+    niche,
+    source_context,
+    *,
+    release_root=None,
+    language="fr",
+    strict=False,
+    channel=None,
+    cluster=None,
+):
+    """Compile only the resolved runtime payload from an explicit snapshot."""
+    if cluster is not None and not channel:
+        raise ValueError("--cluster requires --channel")
+    source = resolve_source(
+        parse_source_context(source_context),
+        release_root=release_root,
+    )
+    if source.manifest["project_id"] != niche:
+        raise ValueError(
+            f"source project_id mismatch: expected {niche!r}, "
+            f"got {source.manifest['project_id']!r}"
+        )
+    runtime = source.runtime
+    channels = runtime["channels"]
+    available_channels = sorted(item["current_handle"] for item in channels)
+    if channel is None and len(available_channels) > 1:
+        raise ValueError(
+            f"[{niche}] plusieurs chaînes dans le registre ({', '.join(available_channels)}); "
+            "utilisez --channel <chaîne> pour compiler chaque formula séparément"
+        )
+    selected = [item for item in channels if channel is None or item["current_handle"] == channel]
+    if len(selected) != 1:
+        available = ", ".join(available_channels) or "aucune"
+        raise ValueError(f"[{niche}] chaîne introuvable: {channel}; disponibles: {available}")
+    selected_channel = selected[0]
+    channel = selected_channel["current_handle"]
+    channel_id = selected_channel["channel_id"]
+
+    videos = []
+    for card in runtime["cards"]:
+        if card.get("channel_id") != channel_id:
+            continue
+        video = dict(card)
+        video.update({"niche": niche, "channel": channel, "channel_id": channel_id})
+        videos.append(video)
+    if cluster is not None:
+        assigned = {
+            item["video_id"]
+            for item in runtime["mappings"]
+            if item.get("channel_id") == channel_id
+            and item.get("subformula_id") == cluster
+            and item.get("status") == "assigned"
+        }
+        if not assigned:
+            raise ValueError(f"unknown or non-production subformula: {cluster!r}")
+        videos = [video for video in videos if video["video_id"] in assigned]
+    if not videos:
+        raise ValueError(f"source contains no cards for channel {channel}")
+
+    formulas = [
+        item
+        for item in runtime["formulas"]
+        if item.get("channel_id") == channel_id
+        and (cluster is None or item.get("subformula_id") == cluster)
+    ]
+    if len(formulas) != 1:
+        raise ValueError("source must resolve exactly one formula for the selected channel")
+    formula = formulas[0]
+    formula_text = formula.get("text")
+    formula_ref = formula.get("ref")
+    if not isinstance(formula_text, str) or not formula_text:
+        raise ValueError("resolved formula text is required")
+    if not isinstance(formula_ref, str) or not formula_ref or _absolute_path(formula_ref):
+        raise ValueError("resolved formula ref must be a relative path")
+
+    inputs = runtime["resolved_compilation_inputs"]
+    target_s = list(inputs["target_duration_s"])
+    shot_s = list(inputs["shot_duration_s"])
+    wpm = inputs["target_wpm"]
+    wpm_source = runtime.get("wpm_source")
+    if not isinstance(wpm_source, str) or not wpm_source:
+        raise ValueError("runtime.wpm_source is required")
+    voice_id = runtime.get("voice_id", "TODO(calibrate-voice)")
+
+    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(formula_text)
+    card_report = inspect_cards(videos)
+    from_cards = parse_cards(videos, report=card_report)
+    if from_cards:
+        style, realism, hook_mechanic = from_cards
+    if strict:
+        _enforce_strict_cards(niche, videos, card_report)
+
+    beats = build_beats(target_s, wpm, hook_template, constant)
+    shots = build_shots(beats, shot_s)
+    camera = constant.get("camera", constant.get("cameras", ""))
+    style_line = next(iter(constant.values())) if constant else style
+    todo = "TODO: engine provenance absent from resolved runtime inputs"
+    prompt_pack = [
+        {
+            "id": "p_hero",
+            "engine": "TODO(engine-facts)",
+            "prompt": f"hero shot (hook 0-3s): {style_line} — {camera or 'plan fixe / drift lent'} — <topic>",
+            "provenance": todo,
+        },
+        {
+            "id": "p_body",
+            "engine": "TODO(engine-facts)",
+            "prompt": f"{style_line} — {camera or 'plan fixe / drift lent'} — beat courant du script, <topic>",
+            "provenance": todo,
+        },
+    ]
+    brief = {
+        "schema_version": "0.2",
+        "niche": niche,
+        "source": {
+            "channel": channel,
+            "videos": [
+                {key: video[key] for key in ("url", "video_id", "channel", "title", "views")}
+                for video in videos
+            ],
+            "format_card_ref": videos[0]["ref"].rsplit("/", 1)[0] + "/",
+            "channel_formula_ref": formula_ref,
+        },
+        "format": {
+            "style": style,
+            "realism": realism,
+            "hook_mechanic": hook_mechanic,
+            "hook_template": hook_template,
+            "constant": constant,
+            "variable_slots": slots,
+        },
+        "script": {
+            "language": language,
+            "voice_id": voice_id,
+            "target_wpm": wpm,
+            "wpm_source": wpm_source,
+            "beats": beats,
+        },
+        "shots": shots,
+        "prompt_pack": prompt_pack,
+        "captions": {"style": "karaoke", "max_lines": 1, "preset": "CC-DerStil"},
+        "gates": {
+            "target_duration_s": target_s,
+            "shot_duration_s": shot_s,
+            "aspect_ratio": "9:16",
+            "source": "snapshot:runtime.resolved_compilation_inputs",
+            "checks": [
+                "durée finale dans target_duration_s",
+                "chaque shot dans shot_duration_s",
+                "9:16",
+                "captions <=1 ligne",
+                "silences coupés",
+            ],
+        },
+    }
+    _reject_absolute_paths(brief)
+    sc.validate_structure(brief)
+    sc.validate_against_sot(brief, target_s, shot_s)
+    return brief, card_report
+
+
+def _absolute_path(value):
+    return Path(value).is_absolute() or re.match(r"^[A-Za-z]:[\\/]", value) is not None
+
+
+def _reject_absolute_paths(value, path="brief"):
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            _reject_absolute_paths(nested, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, nested in enumerate(value):
+            _reject_absolute_paths(nested, f"{path}[{index}]")
+    elif isinstance(value, str) and _absolute_path(value):
+        raise ValueError(f"absolute filesystem path is forbidden in brief ({path})")
 
 
 def _enforce_strict_cards(niche, videos, card_report):
@@ -587,12 +1071,16 @@ def _enforce_strict_cards(niche, videos, card_report):
         )
 
 
-def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=None):
-    """Comme compile_brief, mais retourne aussi le card_report déjà calculé en
-    interne — évite à main() de relire le registre + rappeler inspect_cards()
-    juste pour le rapport de couverture passé à readiness()."""
-    target_s, shot_s = sc.load_sot()
+def _compile_brief_full(
+    niche, voice=None, language="fr", strict=False, channel=None, cluster=None
+):
+    """Builder-only legacy Vault path; runtime callers must use snapshots."""
+    if cluster is not None and not channel:
+        raise ValueError("--cluster requires --channel")
+    target_s, shot_s = sc.load_builder_sot(VAULT)
     videos = load_registry(niche, channel=channel)
+    if cluster is not None:
+        videos = route_subformula(videos, cluster)
     formula_path, formula_text = find_formula(videos)
     assert formula_text, (
         f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
@@ -680,7 +1168,7 @@ def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=
                 for v in videos
             ],
             "format_card_ref": videos[0]["ref"].rsplit("/", 1)[0] + "/",
-            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT)).replace(
+            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT or VAULT)).replace(
                 "\\", "/"
             ),
         },
@@ -772,8 +1260,17 @@ def main():
     ap = argparse.ArgumentParser(description="Compile format_card -> brief.json")
     ap.add_argument("niche")
     ap.add_argument(
+        "--source",
+        help="local:<draft-path> or release:<release_id>",
+    )
+    ap.add_argument("--release-root", help="explicit local mirror root for release contexts")
+    ap.add_argument(
         "--channel",
         help="chaîne exacte à compiler; obligatoire pour une niche multi-chaînes",
+    )
+    ap.add_argument(
+        "--cluster",
+        help="sous-formula approuvée; exige --channel",
     )
     ap.add_argument("--voice", help="alias voice_wpm.json (défaut: auto par niche)")
     ap.add_argument("--language", default="fr")
@@ -786,18 +1283,26 @@ def main():
     args = ap.parse_args()
 
     try:
-        brief, card_report = _compile_brief_full(
+        if args.cluster and not args.channel:
+            raise ValueError("--cluster requires --channel")
+        if not args.source:
+            raise ValueError("source context is required (local:<path> or release:<release_id>)")
+        brief, card_report = _compile_snapshot_brief(
             args.niche,
-            voice=args.voice,
+            args.source,
+            release_root=args.release_root,
             language=args.language,
             strict=args.strict,
             channel=args.channel,
+            cluster=args.cluster,
         )
     except ValueError as e:
         print(f"ERREUR: {e}")
         sys.exit(1)
 
     suffix = f"_{_slug(args.channel)}" if args.channel else ""
+    if args.cluster:
+        suffix += f"_{_slug(args.cluster)}"
     out = Path(args.out) if args.out else HERE / f"brief_{args.niche}{suffix}.json"
     out.write_text(json.dumps(brief, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"OK — brief valide ecrit: {out}")

@@ -4,35 +4,54 @@ Prouve la seule chose qui compte : un brief reste COUPLÉ au SOT de spec
 (Shared/tiktok-spec/tiktok_duration.py) et ne fige aucune constante de prod.
 
 Volontairement sans dépendance (pas de jsonschema) : la validation de structure
-est minimale et faite main ; le cœur du test est le cross-check contre le module
-SOT réel. Lancer :  python brief_selfcheck.py
+est minimale et faite main ; le cœur du test est le cross-check contre le snapshot
+explicitement fourni. Lancer :  python brief_selfcheck.py --source local:<draft-path>
 
 ponytail: valide le contrat, pas chaque champ. Le vrai risque = un brief qui
 diverge du SOT — c'est ce qui est asserté ici.
 """
 
 import json
-import os
+import importlib.util
 import re
 import sys
 from pathlib import Path
 
+from publication.source import parse_source_context, resolve_source
+
 HERE = Path(__file__).resolve().parent
 SCHEMA = HERE / "brief.schema.json"
-
-# --- localiser + importer le SOT de spec (source unique de vérité) -----------
-VAULT = Path(
-    os.environ.get("VAULT_DIR", r"C:\Users\dbele\Documents\ObsidianVault\Wiki_Claude")
-).expanduser()
-SOT_DIR = VAULT / "Shared" / "tiktok-spec"
+VAULT = None  # compatibility seam set only by the explicit builder adapter
 
 
-def load_sot():
-    """Retourne (TIKTOK_TARGET_S, TIKTOK_SHOT_S) depuis le module réel."""
-    sys.path.insert(0, str(SOT_DIR))
-    from tiktok_duration import TIKTOK_TARGET_S, TIKTOK_SHOT_S  # noqa: E402
+def load_sot(source_context, *, release_root=None):
+    """Load gates from an explicit draft/release snapshot."""
+    if source_context is None:
+        raise ValueError("source context is required; no Vault fallback is available")
+    source = resolve_source(
+        parse_source_context(source_context),
+        release_root=release_root,
+    )
+    inputs = source.runtime["resolved_compilation_inputs"]
+    return list(inputs["target_duration_s"]), list(inputs["shot_duration_s"])
 
-    return list(TIKTOK_TARGET_S), list(TIKTOK_SHOT_S)
+
+def load_builder_sot(vault_root):
+    """Load the SOT for an explicit builder Vault, never from process env."""
+    if vault_root is None:
+        raise ValueError("builder Vault root is required")
+    module_path = Path(vault_root) / "Shared" / "tiktok-spec" / "tiktok_duration.py"
+    spec = importlib.util.spec_from_file_location("_explicit_tiktok_duration", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"SOT module is unavailable: {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    sot_dir = str(module_path.parent)
+    sys.path.insert(0, sot_dir)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(sot_dir)
+    return list(module.TIKTOK_TARGET_S), list(module.TIKTOK_SHOT_S)
 
 
 # --- exemple de brief (neon_psycho, illustratif) -----------------------------
@@ -228,18 +247,13 @@ def validate_against_sot(b, target_s, shot_s):
         )
 
 
-def main():
+def main(source_context, *, release_root=None):
     assert SCHEMA.exists(), f"schéma introuvable: {SCHEMA}"
     json.loads(SCHEMA.read_text(encoding="utf-8"))  # le schéma est un JSON valide
 
-    try:
-        target_s, shot_s = load_sot()
-    except Exception as e:  # SOT absent (hors machine vault) -> skip le cross-check
-        print(f"SKIP cross-check SOT (module non importable: {e})")
-        target_s, shot_s = [62.0, 75.0], [1.5, 4.0]
-        sot_ok = False
-    else:
-        sot_ok = True
+    source = resolve_source(parse_source_context(source_context), release_root=release_root)
+    inputs = source.runtime["resolved_compilation_inputs"]
+    target_s, shot_s = list(inputs["target_duration_s"]), list(inputs["shot_duration_s"])
 
     b = example_brief(target_s, shot_s)
     validate_structure(b)
@@ -248,7 +262,7 @@ def main():
     print("OK — brief.schema.json : structure valide, contrat couplé au SOT.")
     print(
         f"  target_duration_s = {target_s}  shot_duration_s = {shot_s}"
-        f"  {'(SOT réel)' if sot_ok else '(fallback, SOT non chargé)'}"
+        f"  source = {source.context.kind}"
     )
     print(
         f"  shots: {len(b['shots'])}  beats: {len(b['script']['beats'])}"
@@ -257,4 +271,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Validate a brief against an explicit snapshot source")
+    parser.add_argument("--source", required=True, help="local:<draft-path> or release:<release_id>")
+    parser.add_argument("--release-root")
+    args = parser.parse_args()
+    main(args.source, release_root=args.release_root)

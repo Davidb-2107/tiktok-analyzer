@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Repo : `C:\Users\dbele\Documents\ObsidianVault\Wiki_Claude\Projects\TikTok Analyzer` (branche `master`, commits directs OK pour ce repo).
+- Repo : dépôt Git Analyzer indépendant (branche `master`, commits directs OK pour ce repo).
 - Prod : VPS Contabo, `docker-compose.prod.yml` (PAS le compose par défaut), **rebuild** pas restart (cf. mémoire deploy_gotchas). URL publique : `https://tiktok-analyzer.hen8n.com`.
 - Ne PAS bumper yt-dlp (2024.10.7 validé en live le 2026-07-20 sur l'énumération TikTok).
 - `order=views` reste le défaut et son comportement actuel est INCHANGÉ (clamp n≤20, tri par vues, playlistend 200) — le pipe format-study existant en dépend.

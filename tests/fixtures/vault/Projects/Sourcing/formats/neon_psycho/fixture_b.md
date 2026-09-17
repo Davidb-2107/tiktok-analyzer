@@ -1,5 +1,7 @@
 ---
 channel: "@fixture_b"
+channel_id: fixture_b
+subformula_mapping_ref: wiki/analyses/synthetic-neon-psycho-clusters.md
 videos: 2234567890123456789
 ---
 
