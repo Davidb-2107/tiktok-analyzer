@@ -1,6 +1,6 @@
 # T010 — Migrate Hub reads and frames off the Vault
 
-Status: open
+Status: resolved
 Type: implementation
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T007, T009
@@ -35,6 +35,20 @@ and make frame access use opaque media artifact IDs instead of Vault paths.
   traversal/path-shaped frame input is rejected.
 - Local development can use the explicit draft source context without
   reintroducing a machine-specific default.
+
+## Answer
+
+T010 keeps the opaque `frame_id` plumbing and the separate media store, but
+Hub thumbnails are officially not served yet. No producer currently populates
+`HUB_MEDIA_ROOT`, and runtime cards do not publish `frame_id`, so the Hub
+returns no thumbnail until a media artifact is actually available.
+
+A follow-up ticket must define the producer, frame-ID assignment rule, and
+R2-to-media-store synchronization (or replace the filesystem adapter with an
+object-store adapter). T010 does not invent that producer.
+
+The dev-only `transcript_registry` bridge in `backend/main.py` is a separate
+retirement item and remains open in the audit ledger; it is outside T010.
 
 ## Out of scope
 
