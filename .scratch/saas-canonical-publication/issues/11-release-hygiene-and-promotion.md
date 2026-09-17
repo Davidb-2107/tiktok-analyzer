@@ -38,8 +38,9 @@ the feature branch without accidentally pushing to `origin/master`.
 ## T011 resolution
 
 The public Analyzer PR and the Vault `snapshot-contract` are green. The
-trusted private gate is intentionally not claimed: its environment, release
-source URL, read credential, and real pinned `release_id` do not exist yet.
+trusted private gate is intentionally not claimed: its protected environment,
+R2 source configuration, read credential, and real pinned `release_id` do not
+exist yet.
 The first private run is pending creation of the immutable release registry;
 until then, T011 is technically promoted but infrastructure-blocked on its
 third acceptance criterion.
