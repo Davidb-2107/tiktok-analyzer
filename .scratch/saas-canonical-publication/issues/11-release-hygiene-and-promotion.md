@@ -37,17 +37,46 @@ the feature branch without accidentally pushing to `origin/master`.
 
 ## T011 resolution
 
-The public Analyzer PR and the Vault `snapshot-contract` are green. The
-trusted private gate is intentionally not claimed: its protected environment,
-R2 source configuration, read credential, and real pinned `release_id` do not
-exist yet.
-The first private run is pending creation of the immutable release registry;
-until then, T011 is technically promoted but infrastructure-blocked on its
-third acceptance criterion.
+The public Analyzer PR and the Vault `snapshot-contract` are green. Vault PR
+#20 was merged into `master` at `05cb8bad27981507ae247345dc92ca374f719969`;
+the Analyzer promotion PR remains separate and unmerged.
 
-The pull requests remain open and `master` is unchanged. Merging is a separate
-explicit release-process decision, outside T011 acceptance: “technically
-promoted” means pushed, pinned, and CI-validated, not merged or in production.
+The first real private publication and gate have now run on
+`codex/channel-scoped-sourcing`:
+
+- publication run:
+  https://github.com/Davidb-2107/Wiki_Claude/actions/runs/35230212912
+- private gate run:
+  https://github.com/Davidb-2107/Wiki_Claude/actions/runs/35230373092
+- Vault commit: `3bcb8b690b52267e91b5816937c5d3b06c71a98a`
+- Analyzer contract pin: `270a979f11581d1d8046a21f0d68f43441a70f9a`
+- published release: `sha256:262e90930dbae113339a5933d0f905294ba1ec9b5bdb3ee82dd1857663ddd939`
+- private mapping suite: `61` tests, `OK`
+
+This proves the builder → R2 → authenticated read → release materialization →
+private mapping path for a real release. T011 remains open until the remote
+Bucket Lock and negative gate controls below are exercised and recorded.
+
+## T011 counter-tests
+
+The following six controls are distinct and must each have a recorded result:
+
+- [ ] Bucket Lock rejects overwrite of an existing object below
+  `releases/sha256/`.
+- [ ] Bucket Lock rejects deletion of that object.
+- [ ] A mutable index (`identity-index.json`, `freshness-index.json`, or
+  `current.json`) remains writable outside the lock prefix.
+- [ ] The private gate rejects an absent `release_id`.
+- [ ] The private gate rejects a payload whose bytes are altered while the
+  manifest remains unchanged.
+- [ ] The private gate rejects an altered manifest whose release identity or
+  payload digest no longer matches the pinned release.
+
+Cloudflare documents that Bucket Lock rules apply to both new and existing
+objects. The release above is therefore in scope when the
+`releases/sha256/` rule is enabled, but remote enforcement still requires the
+negative tests above:
+https://developers.cloudflare.com/r2/buckets/bucket-locks/
 
 ## Out of scope
 
