@@ -1,6 +1,6 @@
 # T011 — Complete release hygiene and safe promotion
 
-Status: open
+Status: resolved
 Type: release-readiness
 Repository: `tiktok-analyzer-format-cards`
 Blocked by: T008, T009, T010
@@ -111,9 +111,9 @@ Evidence from the green counter-test run:
 
 The old and new object probes both being refused demonstrates that the fixed
 lock applies to existing and newly uploaded objects in the effective
-`releases/sha256/` namespace. The Cloudflare rule is now configured and
-empirically enforced; the ticket remains open only because its status is kept
-unchanged pending the separate release-process decision documented below.
+`releases/sha256/` namespace. All T011 acceptance criteria are satisfied and
+the evidence is recorded. Any remaining merge or production decision is a
+separate release-process decision, outside T011 acceptance.
 
 ## Out of scope
 
