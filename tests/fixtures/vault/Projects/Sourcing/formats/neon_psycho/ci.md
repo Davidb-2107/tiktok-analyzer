@@ -1,6 +1,7 @@
 ---
 channel: "@ci"
 channel_id: ci
+subformula_mapping_ref: wiki/analyses/synthetic-neon-psycho-clusters.md
 videos: 1234567890123456789
 ---
 

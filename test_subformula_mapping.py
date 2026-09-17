@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -7,6 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import brief_compiler as bc
+from publication.source import parse_source_context, resolve_source
 
 if os.environ.get("VAULT_DIR"):
     bc.configure_builder_vault(os.environ["VAULT_DIR"])
@@ -19,6 +21,59 @@ HEADER = (
 )
 SEPARATOR = "|---|---|---|---:|---|---|---|---|"
 _MISSING = object()
+_MAPPING_GATE_REGIMES = {"synthetic", "private"}
+
+
+def _mapping_gate_config(env=None):
+    env = os.environ if env is None else env
+    regime = env.get("MAPPING_REGIME", "")
+    source = env.get("MAPPING_SOURCE", "")
+    if regime not in _MAPPING_GATE_REGIMES:
+        raise ValueError(
+            "mapping regime is required and must be synthetic or private"
+        )
+    if not source:
+        raise ValueError("mapping source is required")
+    if regime == "synthetic" and not source.startswith("local:"):
+        raise ValueError("synthetic mapping source must be local:<path>")
+    if regime == "private" and not re.fullmatch(
+        r"release:sha256:[0-9a-f]{64}", source
+    ):
+        raise ValueError("private mapping source must be release:<release_id>")
+    return regime, source
+
+
+def _resolve_release_source(source, release_root):
+    return resolve_source(parse_source_context(source), release_root=release_root)
+
+
+def _snapshot_mapping_assignments(runtime):
+    handles = {
+        channel["channel_id"]: channel["current_handle"]
+        for channel in runtime["channels"]
+    }
+    assignments = {}
+    for row in runtime["mappings"]:
+        channel = handles[row["channel_id"]]
+        ids, statuses = assignments.setdefault(channel, {}).setdefault(
+            row["subformula_id"], (set(), set())
+        )
+        ids.add(row["video_id"])
+        statuses.add(row["status"])
+    for channel, groups in assignments.items():
+        for subformula_id, (_ids, statuses) in groups.items():
+            if len(statuses) != 1:
+                raise ValueError(
+                    f"non-uniform mapping statuses for {channel}/{subformula_id}: "
+                    f"{statuses}"
+                )
+    return {
+        channel: {
+            subformula_id: (ids, statuses.pop())
+            for subformula_id, (ids, statuses) in groups.items()
+        }
+        for channel, groups in assignments.items()
+    }
 
 
 def _mapping(rows, *, niche="neon_psycho", heading=HEADING):
@@ -64,6 +119,57 @@ def _formula(channel, video_ids, ref="wiki/analyses/mapping.md"):
 
 
 class SubformulaMappingTests(unittest.TestCase):
+    def test_mapping_gate_requires_an_explicit_regime_and_source(self):
+        with self.assertRaisesRegex(ValueError, "mapping source"):
+            _mapping_gate_config({"MAPPING_REGIME": "private"})
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "source snapshot is unavailable"):
+                _resolve_release_source(
+                    "release:sha256:" + "a" * 64,
+                    tmp,
+                )
+
+            from test_brief_compiler import _source_payload
+            from test_source_context import _write_snapshot
+
+            root = Path(tmp)
+            payload = _source_payload()
+            manifest, _ = _write_snapshot(
+                root / "draft", payload, project_id="source_fixture"
+            )
+            release_root = root / "releases"
+            release_dir = (
+                release_root
+                / "sha256"
+                / manifest["release_id"].split(":", 1)[1]
+            )
+            _write_snapshot(release_dir, payload, project_id="source_fixture")
+
+            source = f"release:{manifest['release_id']}"
+            snapshot = _resolve_release_source(source, release_root)
+            self.assertEqual(
+                _snapshot_mapping_assignments(snapshot.runtime),
+                {
+                    "@alpha": {
+                        "alpha_main": (
+                            {"111111111111111111", "222222222222222222"},
+                            "assigned",
+                        )
+                    }
+                },
+            )
+            brief = bc.compile_brief(
+                "source_fixture",
+                source_context=source,
+                release_root=release_root,
+                channel="@alpha",
+                cluster="alpha_main",
+            )
+            self.assertEqual(
+                {video["video_id"] for video in brief["source"]["videos"]},
+                {"111111111111111111", "222222222222222222"},
+            )
+
     @contextmanager
     def fixture(
         self,
@@ -439,81 +545,119 @@ class SubformulaMappingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("--cluster requires --channel", result.stdout)
 
-    def test_approved_vault_mapping_resolves_exact_channel_sets(self):
-        vault_dir = os.environ.get("VAULT_DIR")
-        self.assertTrue(
-            vault_dir,
-            "release gate requires VAULT_DIR pointing at the canonical Vault; "
-            "the real mapping check must not be skipped",
-        )
-        mapping_path = Path(vault_dir) / "wiki/analyses/2026-09-11-neon-psycho-clusters.md"
-        self.assertTrue(
-            mapping_path.is_file(),
-            "release gate requires the canonical mapping at "
-            f"{mapping_path}",
-        )
-        expected = {
-            "@viraldtoprw": {
-                "viraldtoprw_end_of_life_attachment": (
-                    {"7571154788486827295", "7568334048544820510"}, "assigned"
-                ),
-                "viraldtoprw_behavioral_attachment": (
-                    {
-                        "7572606346403564831",
-                        "7570326672780643614",
-                        "7572554313268989215",
-                    },
-                    "assigned",
-                ),
-            },
-            "@the.wisejourney": {
-                "wise_provocative_relationship_claim": (
-                    {"7597962877495938326", "7604187243971939606"}, "assigned"
-                ),
-                "wise_pattern_interrupt_shock": (
-                    {"7608722463937072407", "7629453809315499286"},
-                    "analysis_group_only",
-                ),
-                "outlier_no_formula": ({"7589746128195783958"}, "outlier"),
-            },
-        }
-        for channel, assignments in expected.items():
-            videos = bc.load_registry("neon_psycho", channel=channel)
-            result = bc.load_subformula_mapping(videos)
-            actual = {}
-            for row in result:
-                ids, statuses = actual.setdefault(row["subformula_id"], (set(), set()))
-                ids.add(row["video_id"])
-                statuses.add(row["status"])
+    def test_configured_mapping_resolves_exact_channel_sets(self):
+        regime, source = _mapping_gate_config()
+        if regime == "synthetic":
+            vault_dir = os.environ.get("VAULT_DIR")
             self.assertTrue(
-                all(len(statuses) == 1 for _ids, statuses in actual.values()),
-                f"non-uniform mapping statuses: {actual}",
+                vault_dir,
+                "mapping gate requires VAULT_DIR pointing at the selected Vault source",
             )
-            actual = {
-                subformula_id: (ids, status.pop())
-                for subformula_id, (ids, status) in actual.items()
+            vault_root = Path(vault_dir).resolve()
+            self.assertEqual(Path(source.removeprefix("local:")).resolve(), vault_root)
+            mapping_path = vault_root / "wiki/analyses/synthetic-neon-psycho-clusters.md"
+            expected = {
+                "@ci": {
+                    "outlier": ({"1234567890123456789"}, "outlier"),
+                },
+                "@fixture_b": {
+                    "outlier": (
+                        {"2234567890123456789"},
+                        "outlier",
+                    ),
+                },
             }
-            self.assertEqual(actual, assignments)
+            self.assertTrue(
+                mapping_path.is_file(),
+                "mapping gate requires the selected mapping at "
+                f"{mapping_path}",
+            )
+            for channel, assignments in expected.items():
+                videos = bc.load_registry("neon_psycho", channel=channel)
+                result = bc.load_subformula_mapping(videos)
+                actual = {}
+                for row in result:
+                    ids, statuses = actual.setdefault(row["subformula_id"], (set(), set()))
+                    ids.add(row["video_id"])
+                    statuses.add(row["status"])
+                self.assertTrue(
+                    all(len(statuses) == 1 for _ids, statuses in actual.values()),
+                    f"non-uniform mapping statuses: {actual}",
+                )
+                actual = {
+                    subformula_id: (ids, status.pop())
+                    for subformula_id, (ids, status) in actual.items()
+                }
+                self.assertEqual(actual, assignments)
+            return
 
+        release_root = os.environ.get("RELEASE_ROOT")
+        self.assertTrue(
+            release_root,
+            "private mapping gate requires RELEASE_ROOT for the selected release",
+        )
+        snapshot = _resolve_release_source(source, release_root)
+        if snapshot.manifest["project_id"] == "source_fixture":
+            niche = "source_fixture"
+            expected = {
+                "@alpha": {
+                    "alpha_main": (
+                        {"111111111111111111", "222222222222222222"},
+                        "assigned",
+                    )
+                }
+            }
+        else:
+            self.assertEqual(snapshot.manifest["project_id"], "neon_psycho")
+            niche = "neon_psycho"
+            expected = {
+                "@viraldtoprw": {
+                    "viraldtoprw_end_of_life_attachment": (
+                        {"7571154788486827295", "7568334048544820510"}, "assigned"
+                    ),
+                    "viraldtoprw_behavioral_attachment": (
+                        {
+                            "7572606346403564831",
+                            "7570326672780643614",
+                            "7572554313268989215",
+                        },
+                        "assigned",
+                    ),
+                },
+                "@the.wisejourney": {
+                    "wise_provocative_relationship_claim": (
+                        {"7597962877495938326", "7604187243971939606"}, "assigned"
+                    ),
+                    "wise_pattern_interrupt_shock": (
+                        {"7608722463937072407", "7629453809315499286"},
+                        "analysis_group_only",
+                    ),
+                    "outlier_no_formula": ({"7589746128195783958"}, "outlier"),
+                },
+            }
+        self.assertEqual(_snapshot_mapping_assignments(snapshot.runtime), expected)
+        for channel, assignments in expected.items():
             cluster = next(
                 subformula_id
                 for subformula_id, (_ids, status) in assignments.items()
                 if status == "assigned"
             )
-            # T008 will replace this builder smoke with the pinned private
-            # release context.  Keep the current real-Vault gate explicit.
-            brief, _ = bc._compile_brief_full(
-                "neon_psycho", channel=channel, cluster=cluster
+            brief = bc.compile_brief(
+                niche,
+                source_context=source,
+                release_root=release_root,
+                channel=channel,
+                cluster=cluster,
             )
             slug = channel[1:]
             self.assertEqual(brief["source"]["channel"], channel)
             self.assertEqual(
                 brief["source"]["format_card_ref"],
-                f"Projects/Sourcing/transcripts/neon_psycho/{slug}/",
+                f"Projects/Sourcing/transcripts/{niche}/{slug}/",
             )
             self.assertEqual(
                 brief["source"]["channel_formula_ref"],
-                f"Projects/Sourcing/formats/neon_psycho/{slug}.md",
+                f"Projects/Sourcing/formats/{niche}/{slug}.md",
             )
 
 

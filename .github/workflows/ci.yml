@@ -42,14 +42,19 @@ jobs:
             base="$(git rev-parse HEAD^ 2>/dev/null || true)"
             if [[ -n "$base" ]]; then git diff --check "$base..HEAD"; else git diff --check; fi
           fi
-      - name: Run brief compiler self-check
+      - name: Run brief compiler smoke tests
         env:
           VAULT_DIR: ${{ github.workspace }}/tests/fixtures/vault
         run: |
           for channel in @ci @fixture_b; do
             FORMAT_CARD_TEST_CHANNEL="$channel" python -B test_brief_compiler.py
           done
-          python -B brief_selfcheck.py
+      - name: Run synthetic subformula mapping suite
+        env:
+          VAULT_DIR: ${{ github.workspace }}/tests/fixtures/vault
+          MAPPING_REGIME: synthetic
+          MAPPING_SOURCE: local:${{ github.workspace }}/tests/fixtures/vault
+        run: python -B -m unittest test_subformula_mapping test_source_context test_channel_identity test_publication_manifest -q
       - name: Prepare runtime directory
         run: sudo mkdir -p /app/temp && sudo chmod 777 /app/temp
       - name: Run backend tests
