@@ -44,6 +44,10 @@ The first private run is pending creation of the immutable release registry;
 until then, T011 is technically promoted but infrastructure-blocked on its
 third acceptance criterion.
 
+The pull requests remain open and `master` is unchanged. Merging is a separate
+explicit release-process decision, outside T011 acceptance: “technically
+promoted” means pushed, pinned, and CI-validated, not merged or in production.
+
 ## Out of scope
 
 Merging, deleting branches, changing the default branch, and SaaS production
