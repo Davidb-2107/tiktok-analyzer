@@ -74,6 +74,7 @@ jobs:
       - name: Import backend without starting external services
         working-directory: backend
         env:
+          PYTHONPATH: ${{ github.workspace }}
           R2_ACCOUNT_ID: ci-account
           R2_ACCESS_KEY_ID: ci-access-key
           R2_SECRET_ACCESS_KEY: ci-secret-key
