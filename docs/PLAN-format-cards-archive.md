@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.8+ standard library, Markdown, `unittest`, Obsidian vault, Git Bash sous Windows.
 
-**Spec:** `C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude/Projects/Sourcing/SPEC-transcripts.md` et `C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude/Shared/claude-plugins/tiktok-analyzer/skills/extract-format/SKILL.md`.
+**Spec:** the Vault's `Projects/Sourcing/SPEC-transcripts.md` and the installed `extract-format` skill.
 
 **État d'avancement au 2026-09-11:**
 

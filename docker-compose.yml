@@ -16,7 +16,7 @@ services:
       # this to docker-compose.prod.yml. The host path is explicit so the
       # repository can live outside the Obsidian vault.
       - type: bind
-        source: "${SOURCING_HOST_DIR:-C:/Users/dbele/Documents/ObsidianVault/Wiki_Claude/Projects/Sourcing}"
+        source: "${SOURCING_HOST_DIR:?Set SOURCING_HOST_DIR to the local Vault Projects/Sourcing directory}"
         target: /sourcing
         read_only: false
       # Hub draft snapshots are explicit local inputs, never an implicit Vault.

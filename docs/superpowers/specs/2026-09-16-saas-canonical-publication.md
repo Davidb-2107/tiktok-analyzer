@@ -15,6 +15,14 @@ read-model instead of reading a developer's Vault. A project may contain
 several independently identified channels, and a channel may contain several
 human-approved sub-formulas.
 
+## Public-repository invariant
+
+Treat the Analyzer repository as public regardless of its current hosting
+visibility. It must contain no real Vault values: no production digests,
+private release identifiers, source contents, or credentials. Public CI uses
+synthetic fixtures; real-source verification belongs to the trusted Vault CI
+boundary.
+
 ## Vocabulary and authority
 
 - **Project snapshot**: the immutable, versioned publication unit. Its
