@@ -53,6 +53,14 @@ The first real private publication and gate have now run on
 - published release: `sha256:262e90930dbae113339a5933d0f905294ba1ec9b5bdb3ee82dd1857663ddd939`
 - private mapping suite: `61` tests, `OK`
 
+The Analyzer pin is intentionally behind the merged `master`: the verified
+`git diff --name-only 270a979f11581d1d8046a21f0d68f43441a70f9a..eebe63d88cf6bb62b710f5cec629ccfc1459ad73`
+is docs/configuration-only, and the contract-surface filter for `publication/`,
+the compilers, contract/equivalence tests, and `backend/` is empty. A new
+promotion is required only when the publication contract, compiler,
+equivalence tests, or taxonomy module changes; changing the pin is then paired
+with a new release and private gate run.
+
 This proves the builder → R2 → authenticated read → release materialization →
 private mapping path for a real release. T011 remains open until the remote
 Bucket Lock and negative gate controls below are exercised and recorded.
