@@ -29,15 +29,15 @@ subformula_mapping_ref: wiki/analyses/2026-09-11-neon-psycho-clusters.md
 Canonical focused test:
 
 ```text
-VAULT_DIR='C:/Users/dbele/Documents/Codex/2026-09-11/referenced-chatgpt-conversation-this-is-an-2/work/Wiki_Claude-clusters' \
-'C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe' -B -m unittest -v test_subformula_mapping.py
+VAULT_DIR="$VAULT_WORKTREE" \
+python -B -m unittest -v test_subformula_mapping.py
 Ran 13 tests — OK
 ```
 
 Existing compiler regression:
 
 ```text
-'C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe' -B test_brief_compiler.py
+python -B test_brief_compiler.py
 Passed
 ```
 

@@ -102,6 +102,15 @@ an explicit refspec. Completion requires a PR to `master`, public CI green,
 private gate evidence tied to a pinned release, clean worktrees, and no
 author-machine paths.
 
+Verified promotion command:
+
+```text
+git push origin HEAD:refs/heads/codex/channel-scoped-sourcing
+```
+
+Inspect the branch upstream before running this command; do not replace it
+with a bare `git push`.
+
 ### Task 8 — T012: migrate legacy Vault channel identities
 
 Add the frozen `channel_id` to every transcript and channel formula in the

@@ -19,30 +19,30 @@ No compiler, Vault, backend-test, or CI-workflow files changed.
 ## Validation
 
 Bundled runtime used:
-`C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe`
+`python`
 
 Pre-change red check:
 
 ```text
-VAULT_DIR=C:/Users/dbele/Documents/Codex/2026-09-11/referenced-chatgpt-conversation-this-is-an-2/work/Wiki_Claude-clusters C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR="$VAULT_WORKTREE" python -B test_brief_compiler.py
 ValueError: [neon_psycho] chaîne introuvable: @ci; disponibles: @the.wisejourney, @viraldtoprw
 ```
 
 Executed commands and outputs:
 
 ```text
-VAULT_DIR=C:/Users/dbele/Documents/Codex/2026-09-11/referenced-chatgpt-conversation-this-is-an-2/work/Wiki_Claude-clusters C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR="$VAULT_WORKTREE" python -B test_brief_compiler.py
 FAIL: AssertionError in _test_cp1252_warning; its dark_psycho child process returns nonzero.
 
-VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci python -B test_brief_compiler.py
 OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.
   beats: 4 (68.5s)  shots: 25  wpm: 180.0 (ci_voice_v1)
 
-VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@fixture_b C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@fixture_b python -B test_brief_compiler.py
 OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.
   beats: 4 (68.5s)  shots: 25  wpm: 180.0 (ci_voice_v1)
 
-VAULT_DIR=C:/Users/dbele/Documents/Codex/2026-09-11/referenced-chatgpt-conversation-this-is-an-2/work/Wiki_Claude-clusters C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B brief_selfcheck.py
+VAULT_DIR="$VAULT_WORKTREE" python -B brief_selfcheck.py
 OK — brief.schema.json : structure valide, contrat couplé au SOT.
   target_duration_s = [62.0, 75.0]  shot_duration_s = [1.5, 4.0]  (SOT réel)
   shots: 3  beats: 4  prompts: 2
@@ -84,22 +84,22 @@ CI-workflow behavior remain unchanged.
 ### Exact commands and outputs
 
 All commands below use the bundled executable explicitly:
-`C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe`.
+`python`.
 
 ```text
-VAULT_DIR=C:/Users/dbele/Documents/Codex/2026-09-11/referenced-chatgpt-conversation-this-is-an-2/work/Wiki_Claude-clusters C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR="$VAULT_WORKTREE" python -B test_brief_compiler.py
 OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.
   beats: 3 (68.5s)  shots: 25  wpm: 215.0 (aFP1SKN7mTGVQWmfczLk)
 
-VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@ci python -B test_brief_compiler.py
 OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.
   beats: 4 (68.5s)  shots: 25  wpm: 180.0 (ci_voice_v1)
 
-VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@fixture_b C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B test_brief_compiler.py
+VAULT_DIR=tests/fixtures/vault FORMAT_CARD_TEST_CHANNEL=@fixture_b python -B test_brief_compiler.py
 OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.
   beats: 4 (68.5s)  shots: 25  wpm: 180.0 (ci_voice_v1)
 
-VAULT_DIR=C:/Users/dbele/Documents/Codex/2026-09-11/referenced-chatgpt-conversation-this-is-an-2/work/Wiki_Claude-clusters C:/Users/dbele/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe -B brief_selfcheck.py
+VAULT_DIR="$VAULT_WORKTREE" python -B brief_selfcheck.py
 OK — brief.schema.json : structure valide, contrat couplé au SOT.
   target_duration_s = [62.0, 75.0]  shot_duration_s = [1.5, 4.0]  (SOT réel)
   shots: 3  beats: 4  prompts: 2

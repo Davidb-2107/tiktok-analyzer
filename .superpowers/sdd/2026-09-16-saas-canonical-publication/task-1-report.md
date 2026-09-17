@@ -28,7 +28,7 @@ The focused test was written before `publication/` existed:
 
 ```text
 Command:
-C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
+python -m unittest test_publication_manifest.py
 
 Output:
 ModuleNotFoundError: No module named 'publication'
@@ -40,7 +40,7 @@ After the implementation, the focused suite passed:
 
 ```text
 Command:
-C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
+python -m unittest test_publication_manifest.py
 
 Output:
 .....
@@ -58,14 +58,14 @@ ID mutation failures, plus NaN and unsupported schema/hash versions.
 
 ```text
 Command:
-C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m json.tool publication/snapshot.schema.json
+python -m json.tool publication/snapshot.schema.json
 
 Result: exit 0; JSON parsed successfully.
 ```
 
 ```text
 Command:
-C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_subformula_mapping.py
+python -m unittest test_subformula_mapping.py
 
 Output:
 F......................
@@ -103,7 +103,7 @@ Focused verification:
 
 ```text
 Command:
-C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
+python -m unittest test_publication_manifest.py
 
 Output:
 .........
@@ -145,7 +145,7 @@ Focused verification:
 
 ```text
 Command:
-C:\Users\dbele\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m unittest test_publication_manifest.py
+python -m unittest test_publication_manifest.py
 
 Output:
 ...............
