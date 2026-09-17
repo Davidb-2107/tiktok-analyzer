@@ -57,26 +57,63 @@ This proves the builder → R2 → authenticated read → release materializatio
 private mapping path for a real release. T011 remains open until the remote
 Bucket Lock and negative gate controls below are exercised and recorded.
 
+Before the counter-tests, the Bucket Lock configuration was read directly from
+the Cloudflare API (`GET /accounts/<account>/r2/buckets/snapshot-release/lock`).
+The raw response exposed a leading space in the rule prefix:
+
+```json
+{
+  "id": "immutable-releases",
+  "enabled": true,
+  "prefix": " releases/sha256/",
+  "condition": {"type": "Indefinite"}
+}
+```
+
+That prefix matched no published object. The rule was corrected through the
+Cloudflare API with the exact prefix `releases/sha256/`, and a subsequent API
+read confirmed the corrected value. No other rule field was changed.
+
 ## T011 counter-tests
 
-The following six controls are distinct and must each have a recorded result:
+The following six controls are distinct and have now been exercised against the
+real R2 bucket. The workflow used `RELEASE_R2_WRITE_*` for PUT/DELETE and the
+separate read credential for GET/read-back verification:
 
-- [ ] Bucket Lock rejects overwrite of an existing object below
+- [x] Bucket Lock rejects overwrite of an existing object below
   `releases/sha256/`.
-- [ ] Bucket Lock rejects deletion of that object.
-- [ ] A mutable index (`identity-index.json`, `freshness-index.json`, or
+- [x] Bucket Lock rejects deletion of that object.
+- [x] A mutable index (`identity-index.json`, `freshness-index.json`, or
   `current.json`) remains writable outside the lock prefix.
-- [ ] The private gate rejects an absent `release_id`.
-- [ ] The private gate rejects a payload whose bytes are altered while the
+- [x] The private gate rejects an absent `release_id`.
+- [x] The private gate rejects a payload whose bytes are altered while the
   manifest remains unchanged.
-- [ ] The private gate rejects an altered manifest whose release identity or
+- [x] The private gate rejects an altered manifest whose release identity or
   payload digest no longer matches the pinned release.
 
-Cloudflare documents that Bucket Lock rules apply to both new and existing
-objects. The release above is therefore in scope when the
-`releases/sha256/` rule is enabled, but remote enforcement still requires the
-negative tests above:
-https://developers.cloudflare.com/r2/buckets/bucket-locks/
+Evidence from the green counter-test run:
+
+- [counter-test workflow](https://github.com/Davidb-2107/Wiki_Claude/actions/runs/35256990816)
+  - existing overwrite: refused with HTTP `409`;
+  - existing delete: refused with HTTP `409`;
+  - new-object overwrite: refused with HTTP `409`;
+  - new-object delete: refused with HTTP `409`;
+  - mutable `current.json`: update accepted and restored;
+  - altered payload: private gate refused it;
+  - altered manifest: private gate refused it;
+  - workflow result: `T011 R2 counter-tests ... OK`.
+- [absent release gate](https://github.com/Davidb-2107/Wiki_Claude/actions/runs/35246330014)
+  - `sha256:` followed by 64 zeroes was rejected with
+    `ERROR: release is unavailable`.
+- [post-fix positive gate](https://github.com/Davidb-2107/Wiki_Claude/actions/runs/35257152447)
+  - the real release `sha256:262e90930dbae113339a5933d0f905294ba1ec9b5bdb3ee82dd1857663ddd939`
+    passed the private mapping suite.
+
+The old and new object probes both being refused demonstrates that the fixed
+lock applies to existing and newly uploaded objects in the effective
+`releases/sha256/` namespace. The Cloudflare rule is now configured and
+empirically enforced; the ticket remains open only because its status is kept
+unchanged pending the separate release-process decision documented below.
 
 ## Out of scope
 
