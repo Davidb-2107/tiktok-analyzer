@@ -22,8 +22,8 @@ the feature branch without accidentally pushing to `origin/master`.
 
 ## Acceptance criteria
 
-- No versioned report contains `C:/Users/`, `C:\\Users\\`, a Codex runtime
-  path, or another author-machine path.
+- No versioned report contains an absolute Windows path, a Codex runtime path,
+  or another author-machine path.
 - `git diff --check` and the full relevant test suites pass.
 - The branch upstream is inspected explicitly; promotion uses
   `git push origin HEAD:refs/heads/codex/channel-scoped-sourcing` rather than
@@ -34,6 +34,15 @@ the feature branch without accidentally pushing to `origin/master`.
   is dispatched with that pinned `release_id`; its evidence is recorded and no
   claim says that public CI validated the private snapshot.
 - The final worktrees are clean and the exact pushed commit SHAs are recorded.
+
+## T011 resolution
+
+The public Analyzer PR and the Vault `snapshot-contract` are green. The
+trusted private gate is intentionally not claimed: its environment, release
+source URL, read credential, and real pinned `release_id` do not exist yet.
+The first private run is pending creation of the immutable release registry;
+until then, T011 is technically promoted but infrastructure-blocked on its
+third acceptance criterion.
 
 ## Out of scope
 
