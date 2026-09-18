@@ -46,6 +46,17 @@
         "identity_history",
         "build_freshness"
       ]
+    },
+    "media_digest": {
+      "type": "object",
+      "required": ["media_id", "extension", "sha256", "size"],
+      "properties": {
+        "media_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"},
+        "extension": {"type": "string", "enum": [".jpg", ".jpeg", ".png", ".webp"]},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size": {"type": "integer", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
     }
   },
   "title": "Snapshot manifest v1",
@@ -68,7 +79,11 @@
     "project_id_scheme": {"type": "string"},
     "release_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "payload_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "provenance": {"$ref": "#/$defs/provenance"}
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "media_digests": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/media_digest"}
+    }
   },
   "additionalProperties": false
 }

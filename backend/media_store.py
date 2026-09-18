@@ -1,17 +1,18 @@
 """Filesystem adapter for separately retained Hub frame artifacts."""
 
-import re
 from pathlib import Path
 
+from publication.media import MEDIA_EXTENSIONS, validate_artifact_id as _validate_artifact_id
 
-_ARTIFACT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
-_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+_IMAGE_EXTENSIONS = MEDIA_EXTENSIONS
 
 
 def validate_artifact_id(frame_id: str) -> str:
-    if not isinstance(frame_id, str) or _ARTIFACT_ID.fullmatch(frame_id) is None:
-        raise ValueError("frame_id must be an opaque artifact ID")
-    return frame_id
+    try:
+        return _validate_artifact_id(frame_id)
+    except ValueError as error:
+        raise ValueError("frame_id must be an opaque artifact ID") from error
 
 
 class MediaStore:

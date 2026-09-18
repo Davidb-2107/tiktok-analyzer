@@ -10,6 +10,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .media import canonical_media_digests, validate_media_digests_against_runtime
+
 
 _RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _DECIMAL_SOURCE = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?\Z")
@@ -150,9 +152,11 @@ def verify_release(release_id: str, manifest: Mapping[str, object] | bytes, payl
     if manifest["release_id"] != calculated_release_id:
         raise ValueError("manifest release_id does not match manifest")
 
-    _read_canonical_json(payload, "payload")
+    payload_value = _read_canonical_json(payload, "payload")
     if manifest["payload_digest"] != payload_digest(payload):
         raise ValueError("payload digest does not match manifest")
+    if "media_digests" in manifest:
+        validate_media_digests_against_runtime(manifest["media_digests"], payload_value["runtime"])
 
 
 def _validate_manifest(manifest: Mapping[str, object]) -> None:
@@ -173,6 +177,10 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
         if not isinstance(manifest[field], str) or not _RELEASE_ID.fullmatch(manifest[field]):
             raise ValueError(f"{field} is not canonical sha256:<lowercase-hex>")
     _require_fields(manifest["provenance"], _REQUIRED_PROVENANCE_FIELDS, "provenance")
+    if "media_digests" in manifest:
+        media_digests = canonical_media_digests(manifest["media_digests"])
+        if manifest["media_digests"] != media_digests:
+            raise ValueError("media_digests must be sorted canonically")
     canonical_json_bytes(manifest)
 
 
