@@ -11,14 +11,6 @@ services:
       - ./temp:/app/temp
       - ${HF_CACHE_DIR:-./hf_cache}:/root/.cache/huggingface
       - ${SCRIPT_INBOX_HOST:-./script_inbox}:/inbox/scripts
-      # Local dev only — bridges the Sourcing transcript registry (sibling
-      # project) so /jobs/{id}/save-transcript can write into it. Never add
-      # this to docker-compose.prod.yml. The host path is explicit so the
-      # repository can live outside the Obsidian vault.
-      - type: bind
-        source: "${SOURCING_HOST_DIR:?Set SOURCING_HOST_DIR to the local Vault Projects/Sourcing directory}"
-        target: /sourcing
-        read_only: false
       # Hub draft snapshots are explicit local inputs, never an implicit Vault.
       - type: bind
         source: "${HUB_DRAFT_HOST_ROOT:-./hub-draft}"

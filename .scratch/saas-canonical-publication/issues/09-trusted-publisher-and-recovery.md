@@ -1,6 +1,6 @@
 # T009 — Publish immutable snapshots and exercise recovery
 
-Status: open
+Status: resolved
 Type: implementation
 Repository: Vault repository
 Blocked by: T005, T006, T008
@@ -51,6 +51,21 @@ record is still missing the declaration.
 - The runbook restores a clean environment, verifies manifest and payload
   hashes, validates, compiles, compares expected output, and records measured
   RPO/RTO for the secondary copy.
+
+## Resolution
+
+The recovery drill was executed on 2026-09-18 against disposable VPS staging
+using the pinned R2 release
+`sha256:262e90930dbae113339a5933d0f905294ba1ec9b5bdb3ee82dd1857663ddd939`.
+The verifier passed for both materialized copies. The manifest and payload
+SHA-256 values were respectively
+`986df408c898fc458a79e5bf88268cbe36aedb0c3a1a0e2aae72002f7e4b2172` and
+`89e0fcb69680230199430141a2d6080f8cd06ab6f7913a6e0b5f72264cec57b5`.
+All three assigned formulas were compiled from the clean secondary restore
+with explicit channel/subformula selectors, and each output matched the
+expected output byte-for-byte. Measured RPO was approximately zero seconds;
+measured RTO from clean-directory creation through successful comparisons was
+0.586 seconds. The production release and running container were not changed.
 
 ## Out of scope
 

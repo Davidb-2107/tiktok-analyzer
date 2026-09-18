@@ -7,7 +7,6 @@ import re
 import shutil
 import socket
 import subprocess
-import sys
 import urllib.parse
 import urllib.request
 import uuid
@@ -29,18 +28,9 @@ from pydantic import BaseModel
 app = FastAPI(title="TikTok Analyzer")
 logger = logging.getLogger("tiktok-analyzer")
 
-# Importé avant le sys.path.insert ci-dessous : un éventuel
+# Importé avant les autres modules locaux : un éventuel
 # Sourcing/tools/hub.py ne doit jamais shadower backend/hub.py.
 import hub as niche_hub
-
-# Local-dev-only bridge into the Wiki_Claude vault's Sourcing transcript
-# registry — mounted at /sourcing/tools by docker-compose.yml (never in
-# docker-compose.prod.yml, so this stays None on the public VPS deployment).
-try:
-    sys.path.insert(0, "/sourcing/tools")
-    import transcript_registry
-except ImportError:
-    transcript_registry = None
 
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "2"))
 # Backlog cap: jobs beyond MAX_CONCURRENT_JOBS now QUEUE (status stays
@@ -426,13 +416,6 @@ class JobResponse(BaseModel):
 
 class UserTagsRequest(BaseModel):
     tags: list[str] = []
-
-
-class SaveTranscriptRequest(BaseModel):
-    niche: str
-    channel: str | None = None
-    title: str | None = None
-    views: int | None = None
 
 
 class WatchChannelRequest(BaseModel):
@@ -1544,40 +1527,6 @@ async def patch_user_tags(job_id: str, payload: UserTagsRequest):
     _write_script(job_id)
     job = _load_job(job_id) or {}
     return JobResponse(job_id=job_id, **_resolve_frames(job_id, job))
-
-
-@app.post("/jobs/{job_id}/save-transcript")
-async def save_transcript(job_id: str, request: SaveTranscriptRequest):
-    """Local-dev-only bridge into the Wiki_Claude vault's Sourcing transcript
-    registry (Projects/Sourcing/tools/transcript_registry.py, mounted at
-    /sourcing/tools by docker-compose.yml — absent in prod, where this
-    endpoint 501s)."""
-    if transcript_registry is None:
-        raise HTTPException(status_code=501, detail="Sourcing registry not mounted (local dev only).")
-    job = _load_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if not job.get("transcript"):
-        raise HTTPException(status_code=409, detail="Job has no transcript yet.")
-    niche = request.niche.strip()
-    if not niche:
-        raise HTTPException(status_code=422, detail="niche is required.")
-    try:
-        video_id = transcript_registry.extract_video_id(job["url"])
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    path = transcript_registry.save(
-        niche=niche,
-        video_id=video_id,
-        url=job["url"],
-        transcript=job["transcript"],
-        channel=request.channel,
-        title=request.title,
-        views=request.views,
-    )
-    if path is None:
-        return {"saved": False, "reason": "already_exists"}
-    return {"saved": True, "path": str(path)}
 
 
 @app.get("/jobs/{job_id}/frames.zip")

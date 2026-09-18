@@ -14,80 +14,6 @@ function frameUrls(api, video) {
     : video.frames
 }
 
-function SaveToSourcing({ api, video, channel, showToast }) {
-  const [niche, setNiche] = useState(() => localStorage.getItem('sourcing.lastNiche') || '')
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(null) // null | 'saved' | 'exists'
-
-  const save = async () => {
-    const n = niche.trim()
-    if (!n || saving) return
-    setSaving(true)
-    try {
-      const res = await fetch(`${api}/jobs/${video.job_id}/save-transcript`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ niche: n, channel, title: video.title, views: video.views }),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        showToast(`Save failed: ${data.detail || `HTTP ${res.status}`}`)
-        return
-      }
-      localStorage.setItem('sourcing.lastNiche', n)
-      if (data.saved) {
-        setSaved('saved')
-        showToast('Saved to Sourcing registry')
-      } else {
-        setSaved('exists')
-        showToast('Already saved, skipped')
-      }
-    } catch (err) {
-      showToast(`Save failed: ${err.message || err}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const disabled = video.status !== 'done' || !video.transcript || saving
-
-  return (
-    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-      <input
-        type="text"
-        value={niche}
-        onChange={e => { setNiche(e.target.value); setSaved(null) }}
-        placeholder="niche (e.g. neon_psycho)"
-        disabled={disabled}
-        style={{
-          padding: '0.4rem 0.7rem',
-          borderRadius: '6px',
-          border: '1px solid #2a2a2a',
-          background: '#111',
-          color: '#ddd',
-          fontSize: '0.8rem',
-          minWidth: '10rem',
-        }}
-      />
-      <button
-        onClick={save}
-        disabled={disabled}
-        style={{
-          padding: '0.4rem 0.85rem',
-          borderRadius: '6px',
-          border: '1px solid #2a2a2a',
-          background: 'transparent',
-          color: disabled ? '#555' : '#aaa',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          fontSize: '0.8rem',
-        }}
-      >
-        {saved === 'saved' ? '✓ Saved' : saved === 'exists' ? '✓ Already saved' : 'Save to Sourcing'}
-      </button>
-    </div>
-  )
-}
-
 function WatchChannelButton({ api, url, showToast }) {
   const [state, setState] = useState('idle') // idle | loading | followed | exists | error
   const [errMsg, setErrMsg] = useState('')
@@ -288,9 +214,6 @@ export default function ChannelResults({ api, url, topN, fps, project, onBack })
           {frameUrls(api, video).length > 0 && <FrameGallery frames={frameUrls(api, video)} />}
           {video.transcript && <Transcript text={video.transcript} />}
 
-          {video.status !== 'rejected' && (
-            <SaveToSourcing api={api} video={video} channel={channel} showToast={showToast} />
-          )}
         </div>
       ))}
 

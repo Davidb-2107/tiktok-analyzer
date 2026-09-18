@@ -54,7 +54,7 @@ jobs:
           VAULT_DIR: ${{ github.workspace }}/tests/fixtures/vault
           MAPPING_REGIME: synthetic
           MAPPING_SOURCE: local:${{ github.workspace }}/tests/fixtures/vault
-        run: python -B -m unittest test_subformula_mapping test_source_context test_channel_identity test_publication_manifest -q
+        run: python -B -m unittest test_subformula_mapping test_source_context test_channel_identity test_publication_manifest test_transcript_registry_retirement -q
       - name: Prepare runtime directory
         run: sudo mkdir -p /app/temp && sudo chmod 777 /app/temp
       - name: Run backend tests

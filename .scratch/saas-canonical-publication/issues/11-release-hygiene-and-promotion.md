@@ -37,9 +37,10 @@ the feature branch without accidentally pushing to `origin/master`.
 
 ## T011 resolution
 
-The public Analyzer PR and the Vault `snapshot-contract` are green. Vault PR
-#20 was merged into `master` at `05cb8bad27981507ae247345dc92ca374f719969`;
-the Analyzer promotion PR remains separate and unmerged.
+The public Analyzer PR was merged into `master` at
+`c2c0abea9fc4c5f422c2e85b38a14344290b8b4f`. Vault PR #20 was merged into
+`master` at `05cb8bad27981507ae247345dc92ca374f719969`. Those merges were
+separate release-process decisions and did not change T011 acceptance.
 
 The first real private publication and gate have now run on
 `codex/channel-scoped-sourcing`:
@@ -53,9 +54,17 @@ The first real private publication and gate have now run on
 - published release: `sha256:262e90930dbae113339a5933d0f905294ba1ec9b5bdb3ee82dd1857663ddd939`
 - private mapping suite: `61` tests, `OK`
 
+The Analyzer pin is intentionally behind the merged `master`: the verified
+`git diff --name-only 270a979f11581d1d8046a21f0d68f43441a70f9a..eebe63d88cf6bb62b710f5cec629ccfc1459ad73`
+is docs/configuration-only, and the contract-surface filter for `publication/`,
+the compilers, contract/equivalence tests, and `backend/` is empty. A new
+promotion is required only when the publication contract, compiler,
+equivalence tests, or taxonomy module changes; changing the pin is then paired
+with a new release and private gate run.
+
 This proves the builder → R2 → authenticated read → release materialization →
-private mapping path for a real release. T011 remains open until the remote
-Bucket Lock and negative gate controls below are exercised and recorded.
+private mapping path for a real release. The remote Bucket Lock and negative
+gate controls are recorded below as the final T011 evidence.
 
 Before the counter-tests, the Bucket Lock configuration was read directly from
 the Cloudflare API (`GET /accounts/<account>/r2/buckets/snapshot-release/lock`).
@@ -112,10 +121,21 @@ Evidence from the green counter-test run:
 The old and new object probes both being refused demonstrates that the fixed
 lock applies to existing and newly uploaded objects in the effective
 `releases/sha256/` namespace. All T011 acceptance criteria are satisfied and
-the evidence is recorded. Any remaining merge or production decision is a
-separate release-process decision, outside T011 acceptance.
+the evidence is recorded. Merge and production were separate release-process
+decisions, outside T011 acceptance.
+
+## Post-T011 production deployment
+
+The separate production decision was subsequently executed with application
+commit `c2c0abea9fc4c5f422c2e85b38a14344290b8b4f` and the pinned release
+`sha256:262e90930dbae113339a5933d0f905294ba1ec9b5bdb3ee82dd1857663ddd939`.
+The deployed `production-2026-09-18-t011` tag points to that application
+commit. `GET https://tiktok-analyzer.hen8n.com/hub` returned HTTP 200 and
+reported the pinned release, with two niches and channels
+`the.wisejourney` and `viraldtoprw`.
 
 ## Out of scope
 
-Merging, deleting branches, changing the default branch, and SaaS production
-deployment require a separate explicit decision.
+Merging, deleting branches, and changing the default branch require a separate
+explicit decision. Production deployment was also separate and is recorded
+above.
