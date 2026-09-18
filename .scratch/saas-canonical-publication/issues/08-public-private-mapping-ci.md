@@ -1,6 +1,6 @@
 # T008 — Run the shared mapping suite in public and private CI
 
-Status: open
+Status: resolved
 Type: implementation
 Repository: `tiktok-analyzer-format-cards` + Vault repository
 Blocked by: T006, T007
@@ -41,7 +41,15 @@ post-T009 release-readiness action owned by T011.
   isolation, declared-ID/partition mismatch, and the poison test.
 - A PR to `master` visibly runs the public job; the private result is recorded
   in the trusted release workflow rather than claimed as public CI. The
-  actual private run with a pinned release is recorded by T011 after T009.
+  actual private run with a pinned release is recorded by T011.
+
+## Resolution
+
+All acceptance criteria are satisfied: public CI runs the synthetic mapping
+suite, the private workflow is explicit and fail-closed, both regimes execute
+the same module, and the complete status/channel/poison coverage is present.
+T011 records the real private run against the pinned release and its successful
+result; no public job claims access to private Vault data.
 
 ## Out of scope
 
