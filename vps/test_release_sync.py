@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import stat
 
 from publication.manifest import canonical_manifest_bytes, canonical_payload_bytes, release_id_for
 from vps.release_sync import ReleaseSync, SyncConfig, SyncError, read_pin, write_pin
@@ -161,3 +163,6 @@ def test_pin_writer_audits_old_and_new(tmp_path):
     assert entries[1]["old"] == first
     assert entries[1]["new"] == second
     assert entries[1]["actor"] == "bob"
+    if os.name != "nt":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+        assert stat.S_IMODE((tmp_path / "pinned-release.journal").stat().st_mode) == 0o640

@@ -128,6 +128,41 @@ def test_production_resolves_only_a_pinned_release_and_propagates_release_id(tmp
         )
 
 
+def test_production_resolves_the_active_release_state_over_stale_context(tmp_path):
+    payload = _payload()
+    manifest, _ = _write_snapshot(tmp_path / "draft", payload, project_id="niche-42")
+    release_root = tmp_path / "releases"
+    release_dir = release_root / "sha256" / manifest["release_id"].removeprefix("sha256:")
+    _write_snapshot(release_dir, payload, project_id="niche-42")
+    state_path = tmp_path / "state" / "active-release"
+    state_path.parent.mkdir()
+    state_path.write_text(manifest["release_id"] + "\n", encoding="ascii")
+
+    service = hub.load_hub_service(
+        _env(
+            HUB_SOURCE_CONTEXT="release:sha256:" + "b" * 64,
+            HUB_ACTIVE_RELEASE_PATH=str(state_path),
+            HUB_RELEASE_ROOT=str(release_root),
+            HUB_MEDIA_ROOT=str(tmp_path / "media"),
+        )
+    )
+
+    assert service.source.context.value == manifest["release_id"]
+    assert service.read_model["release_id"] == manifest["release_id"]
+
+
+def test_production_fails_closed_when_active_release_state_is_missing(tmp_path):
+    with pytest.raises(ValueError, match="active release state"):
+        hub.load_hub_service(
+            _env(
+                HUB_SOURCE_CONTEXT="release:sha256:" + "b" * 64,
+                HUB_ACTIVE_RELEASE_PATH=str(tmp_path / "missing-active-release"),
+                HUB_RELEASE_ROOT=str(tmp_path / "releases"),
+                HUB_MEDIA_ROOT=str(tmp_path / "media"),
+            )
+        )
+
+
 def test_local_profile_accepts_only_an_explicit_draft_context(tmp_path):
     _write_snapshot(tmp_path / "draft", _payload(), project_id="niche-42")
     service = hub.load_hub_service(

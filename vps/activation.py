@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 
 from publication.manifest import parse_manifest_bytes, verify_release
 from publication.media import MEDIA_EXTENSIONS, require_media_digests, verify_media_bytes
+from publication.release_state import ReleaseStateError, read_release_state
 from publication.source import parse_source_context, resolve_source
 
 from vps.release_sync import (
@@ -122,23 +123,10 @@ class ActivationConfig:
 
 
 def _read_state(path: Path, label: str, *, required: bool) -> str | None:
-    if not path.exists():
-        if required:
-            raise ActiveStateUnknown(f"{label} state is unavailable")
-        return None
-    if path.is_symlink():
-        raise ActiveStateUnknown(f"{label} state is a symlink")
     try:
-        lines = path.read_text(encoding="ascii").splitlines()
-    except OSError as error:
-        raise ActiveStateUnknown(f"{label} state cannot be read") from error
-    if len(lines) != 1:
-        raise ActiveStateUnknown(f"{label} state is not one digest line")
-    try:
-        _digest_hex(lines[0])
-    except SyncError as error:
-        raise ActiveStateUnknown(f"{label} state is indeterminate") from error
-    return lines[0]
+        return read_release_state(path, label=label, required=required)
+    except ReleaseStateError as error:
+        raise ActiveStateUnknown(str(error)) from error
 
 
 def _write_state(path: Path, release_id: str | None) -> None:
@@ -148,7 +136,7 @@ def _write_state(path: Path, release_id: str | None) -> None:
         path.unlink(missing_ok=True)
         return
     _digest_hex(release_id)
-    _atomic_write(path, (release_id + "\n").encode("ascii"), mode=0o600)
+    _atomic_write(path, (release_id + "\n").encode("ascii"), mode=0o640)
 
 
 def _restore_state(path: Path, release_id: str | None) -> None:
@@ -203,7 +191,7 @@ def _append_journal(path: Path, entry: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(dict(entry), sort_keys=True, separators=(",", ":")) + "\n")
-    os.chmod(path, 0o600)
+    os.chmod(path, 0o640)
 
 
 class ReleaseActivator:
@@ -288,7 +276,7 @@ class CommandHubController:
 
     def reload(self, release_id: str) -> None:
         environment = os.environ.copy()
-        environment["HUB_SOURCE_CONTEXT"] = f"release:{release_id}"
+        environment.pop("HUB_SOURCE_CONTEXT", None)
         subprocess.run(shlex.split(self.reload_command), check=True, env=environment)
 
     def verify_external(self, release_id: str) -> None:

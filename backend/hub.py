@@ -2,12 +2,14 @@
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping
 
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from hub_read_model import project_runtime
 from media_store import MediaStore
+from publication.release_state import ReleaseStateError, read_release_state
 from publication.source import SnapshotSource, parse_source_context, resolve_source
 
 
@@ -25,6 +27,18 @@ def _required(environ: Mapping[str, str], name: str) -> str:
     return value
 
 
+def _release_context(environ: Mapping[str, str]):
+    state_path = environ.get("HUB_ACTIVE_RELEASE_PATH", "").strip()
+    if state_path:
+        try:
+            release_id = read_release_state(Path(state_path), label="active release")
+        except ReleaseStateError as error:
+            raise ValueError(f"active release state is invalid: {error}") from error
+        assert release_id is not None
+        return parse_source_context(f"release:{release_id}")
+    return parse_source_context(_required(environ, "HUB_SOURCE_CONTEXT"))
+
+
 def load_hub_service(environ: Mapping[str, str] | None = None) -> HubService | None:
     environ = os.environ if environ is None else environ
     enabled = environ.get("HUB_ROUTE_ENABLED", "false").strip().lower()
@@ -36,7 +50,7 @@ def load_hub_service(environ: Mapping[str, str] | None = None) -> HubService | N
     profile = _required(environ, "HUB_PROFILE")
     if profile not in {"production", "local"}:
         raise ValueError("HUB_PROFILE must be production or local")
-    context = parse_source_context(_required(environ, "HUB_SOURCE_CONTEXT"))
+    context = _release_context(environ)
     if profile == "production" and context.kind != "release":
         raise ValueError("production Hub requires a release source context")
     release_root = environ.get("HUB_RELEASE_ROOT", "").strip() or None
