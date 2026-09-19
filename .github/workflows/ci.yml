@@ -59,6 +59,8 @@ jobs:
         run: python -m pytest test_publication_media.py -q
       - name: Run VPS release sync tests
         run: python -m pytest vps/test_release_sync.py -q
+      - name: Run VPS activation tests
+        run: python -m pytest vps/test_activation.py -q
       - name: Prepare runtime directory
         run: sudo mkdir -p /app/temp && sudo chmod 777 /app/temp
       - name: Run backend tests
