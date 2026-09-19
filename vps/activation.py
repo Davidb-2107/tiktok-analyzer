@@ -292,7 +292,10 @@ class CommandHubController:
         subprocess.run(shlex.split(self.reload_command), check=True, env=environment)
 
     def verify_external(self, release_id: str) -> None:
-        request = Request(self.external_url, headers={"Accept": "application/json"})
+        request = Request(
+            self.external_url,
+            headers={"Accept": "application/json", "User-Agent": "tiktok-analyzer-activation/1"},
+        )
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
