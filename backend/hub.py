@@ -50,6 +50,11 @@ def load_hub_service(environ: Mapping[str, str] | None = None) -> HubService | N
     profile = _required(environ, "HUB_PROFILE")
     if profile not in {"production", "local"}:
         raise ValueError("HUB_PROFILE must be production or local")
+    if profile == "production":
+        if not environ.get("HUB_ACTIVE_RELEASE_PATH", "").strip():
+            raise ValueError("HUB_ACTIVE_RELEASE_PATH is required in production")
+        if environ.get("HUB_SOURCE_CONTEXT", "").strip():
+            raise ValueError("HUB_SOURCE_CONTEXT is forbidden in production")
     context = _release_context(environ)
     if profile == "production" and context.kind != "release":
         raise ValueError("production Hub requires a release source context")
