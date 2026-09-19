@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import stat
 
 import pytest
 import vps.activation as activation_module
@@ -44,6 +46,22 @@ def test_external_verification_identifies_activation_client(monkeypatch):
 
     assert seen["request"].get_header("User-agent") == "tiktok-analyzer-activation/1"
     assert seen["request"].get_header("Accept") == "application/json"
+
+
+def test_reload_does_not_inject_a_static_source_context(monkeypatch):
+    captured = {}
+
+    def fake_run(command, *, check, env):
+        captured["command"] = command
+        captured["env"] = env
+
+    monkeypatch.setenv("HUB_SOURCE_CONTEXT", "release:sha256:" + "b" * 64)
+    monkeypatch.setattr(activation_module.subprocess, "run", fake_run)
+    activation_module.CommandHubController("docker compose up", "https://example.test/hub").reload(
+        "sha256:" + "a" * 64
+    )
+
+    assert "HUB_SOURCE_CONTEXT" not in captured["env"]
 
 
 class Hub:
@@ -136,6 +154,8 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     assert read_pin(cfg.pin_path) == release
     assert cfg.active_path.read_text().strip() == release
     assert cfg.previous_path.read_text().strip() == "sha256:" + "1" * 64
+    if os.name != "nt":
+        assert stat.S_IMODE(cfg.active_path.stat().st_mode) == 0o640
     assert hub.reloads == [release]
     assert hub.verifications == [release]
     journal = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()]

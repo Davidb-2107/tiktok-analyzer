@@ -89,12 +89,12 @@ def write_pin(path: Path, digest: str, *, actor: str, reason: str) -> None:
     old = None
     if path.exists():
         old = read_pin(path)
-    _atomic_write(path, (digest + "\n").encode("ascii"), mode=0o600)
+    _atomic_write(path, (digest + "\n").encode("ascii"), mode=0o640)
     journal = path.with_name(path.name + ".journal")
     entry = {"actor": actor, "old": old, "new": digest, "reason": reason, "timestamp": _now()}
     with journal.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(entry, sort_keys=True, separators=(",", ":")) + "\n")
-    os.chmod(journal, 0o600)
+    os.chmod(journal, 0o640)
 
 
 class S3ObjectStore:

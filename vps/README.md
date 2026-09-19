@@ -19,7 +19,10 @@ python -m vps.release_sync pin \
 Install the checkout at `/opt/tiktok-analyzer`, create the `tiktok-sync` user,
 copy `release-sync.env.example` to `/etc/tiktok-analyzer/release-sync.env`
 with mode `0600`, and grant that user write access only to the state, release,
-and media roots. Install the two unit files and enable the timer:
+and media roots. The state directory is a shared group boundary: make it
+`tiktok-sync:tiktok-sync` with mode `2770`, and state files are `0640` so the
+Hub can read them without receiving R2 credentials. Install the two unit files
+and enable the timer:
 
 ```sh
 systemctl daemon-reload
@@ -32,9 +35,11 @@ is invoked after the second consecutive failure and once on recovery.
 
 Activation is operator-only and takes its target digest explicitly. It refuses
 anything that is not the current pin, is not completely materialized, is
-legacy, or fails revalidation. The reload command receives
-`HUB_SOURCE_CONTEXT=release:<digest>` in its environment; the external `/hub`
-check must return the same `release_id`:
+legacy, or fails revalidation. The Hub reads the canonical one-line
+`active-release` state from the read-only state-directory mount; activation is
+its only writer. The external `/hub` check must return the same `release_id`.
+If the state is absent, malformed, unreadable, or a symlink, the Hub fails
+closed rather than falling back to a stale environment value:
 
 ```sh
 python -m vps.activation activate \
@@ -42,6 +47,11 @@ python -m vps.activation activate \
   --actor operator@example.com \
   --reason "promote gated release"
 ```
+
+`active-release` is critical Hub state. If it is absent or invalid, do not
+edit it by hand: stop the timer, inspect the pin and activation journal, sync
+the pinned digest, then run the explicit activation command above. The Hub
+must remain fail-closed until that state is restored and externally verified.
 
 Rollback writes the previous active digest to the pin first, synchronizes it if
 needed, then calls the same activation primitive. Local GC protects active,
