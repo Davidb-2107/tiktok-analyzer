@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import pytest
+import vps.activation as activation_module
 
 from publication.manifest import canonical_manifest_bytes, canonical_payload_bytes, release_id_for
 from vps.activation import (
@@ -17,6 +18,32 @@ from vps.activation import (
     ReleaseActivator,
 )
 from vps.release_sync import read_pin, write_pin
+
+
+def test_external_verification_identifies_activation_client(monkeypatch):
+    release_id = "sha256:" + "a" * 64
+    seen = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def read(self):
+            return json.dumps({"release_id": release_id}).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        seen["request"] = request
+        seen["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(activation_module, "urlopen", fake_urlopen)
+    activation_module.CommandHubController("unused", "https://example.test/hub").verify_external(release_id)
+
+    assert seen["request"].get_header("User-agent") == "tiktok-analyzer-activation/1"
+    assert seen["request"].get_header("Accept") == "application/json"
 
 
 class Hub:
