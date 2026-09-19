@@ -108,10 +108,13 @@ def test_production_resolves_only_a_pinned_release_and_propagates_release_id(tmp
     release_root = tmp_path / "releases"
     release_dir = release_root / "sha256" / manifest["release_id"].removeprefix("sha256:")
     _write_snapshot(release_dir, payload, project_id="niche-42")
+    state_path = tmp_path / "state" / "active-release"
+    state_path.parent.mkdir()
+    state_path.write_text(manifest["release_id"] + "\n", encoding="ascii")
 
     service = hub.load_hub_service(
         _env(
-            HUB_SOURCE_CONTEXT=f"release:{manifest['release_id']}",
+            HUB_ACTIVE_RELEASE_PATH=str(state_path),
             HUB_RELEASE_ROOT=str(release_root),
             HUB_MEDIA_ROOT=str(tmp_path / "media"),
         )
@@ -119,16 +122,9 @@ def test_production_resolves_only_a_pinned_release_and_propagates_release_id(tmp
 
     assert service.read_model["release_id"] == manifest["release_id"]
     assert service.source.context.kind == "release"
-    with pytest.raises(ValueError, match="production.*release"):
-        hub.load_hub_service(
-            _env(
-                HUB_SOURCE_CONTEXT=f"local:{tmp_path / 'draft'}",
-                HUB_MEDIA_ROOT=str(tmp_path / "media"),
-            )
-        )
 
 
-def test_production_resolves_the_active_release_state_over_stale_context(tmp_path):
+def test_production_rejects_static_context_even_with_active_release_state(tmp_path):
     payload = _payload()
     manifest, _ = _write_snapshot(tmp_path / "draft", payload, project_id="niche-42")
     release_root = tmp_path / "releases"
@@ -138,24 +134,21 @@ def test_production_resolves_the_active_release_state_over_stale_context(tmp_pat
     state_path.parent.mkdir()
     state_path.write_text(manifest["release_id"] + "\n", encoding="ascii")
 
-    service = hub.load_hub_service(
-        _env(
-            HUB_SOURCE_CONTEXT="release:sha256:" + "b" * 64,
-            HUB_ACTIVE_RELEASE_PATH=str(state_path),
-            HUB_RELEASE_ROOT=str(release_root),
-            HUB_MEDIA_ROOT=str(tmp_path / "media"),
+    with pytest.raises(ValueError, match="HUB_SOURCE_CONTEXT.*forbidden"):
+        hub.load_hub_service(
+            _env(
+                HUB_SOURCE_CONTEXT="release:sha256:" + "b" * 64,
+                HUB_ACTIVE_RELEASE_PATH=str(state_path),
+                HUB_RELEASE_ROOT=str(release_root),
+                HUB_MEDIA_ROOT=str(tmp_path / "media"),
+            )
         )
-    )
-
-    assert service.source.context.value == manifest["release_id"]
-    assert service.read_model["release_id"] == manifest["release_id"]
 
 
 def test_production_fails_closed_when_active_release_state_is_missing(tmp_path):
     with pytest.raises(ValueError, match="active release state"):
         hub.load_hub_service(
             _env(
-                HUB_SOURCE_CONTEXT="release:sha256:" + "b" * 64,
                 HUB_ACTIVE_RELEASE_PATH=str(tmp_path / "missing-active-release"),
                 HUB_RELEASE_ROOT=str(tmp_path / "releases"),
                 HUB_MEDIA_ROOT=str(tmp_path / "media"),
@@ -201,10 +194,13 @@ def test_projection_routes_by_frozen_channel_id_and_only_assigned_mappings(tmp_p
     assert "@old_handle" not in str(service.read_model)
 
 
-def test_enabled_hub_fails_closed_on_missing_configuration():
-    for missing in ("HUB_PROFILE", "HUB_SOURCE_CONTEXT", "HUB_MEDIA_ROOT"):
+def test_enabled_hub_fails_closed_on_missing_configuration(tmp_path):
+    state_path = tmp_path / "state" / "active-release"
+    state_path.parent.mkdir()
+    state_path.write_text("sha256:" + "a" * 64 + "\n", encoding="ascii")
+    for missing in ("HUB_PROFILE", "HUB_ACTIVE_RELEASE_PATH", "HUB_MEDIA_ROOT"):
         env = _env(
-            HUB_SOURCE_CONTEXT="release:sha256:" + "a" * 64,
+            HUB_ACTIVE_RELEASE_PATH=str(state_path),
             HUB_RELEASE_ROOT="/releases",
             HUB_MEDIA_ROOT="/media",
         )
