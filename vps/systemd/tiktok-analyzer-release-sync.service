@@ -1,0 +1,17 @@
+[Unit]
+Description=Prepare the pinned TikTok Analyzer release from private R2
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=tiktok-sync
+Group=tiktok-sync
+WorkingDirectory=/opt/tiktok-analyzer
+EnvironmentFile=/etc/tiktok-analyzer/release-sync.env
+ExecStart=/usr/bin/python3 -m vps.release_sync sync
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tiktok-analyzer/release-sync /srv/tiktok-analyzer/releases /srv/tiktok-analyzer/media
+ReadOnlyPaths=/etc/tiktok-analyzer /opt/tiktok-analyzer

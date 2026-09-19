@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly preparation of the pinned TikTok Analyzer release
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+Unit=tiktok-analyzer-release-sync.service
+
+[Install]
+WantedBy=timers.target
