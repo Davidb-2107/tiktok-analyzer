@@ -98,6 +98,13 @@ The manifest uses these exact provenance names: `vault_commit`,
 `sot_versions`, `voice_profile_digest`, `identity_history`, and
 `build_freshness`. The payload is not duplicated under `manifest.json`.
 
+`provenance.frame_bundle_sha256` is optional and additive: when present it
+records the derived digest of the verified sourcing frame bundle the release
+was built from, and releases published before the field existed do not carry
+it. The publication builder must derive the value from the bundle bytes and
+refuse any divergence from the approved digest; the value is never taken as a
+free parameter.
+
 ### Canonical bytes and release identity
 
 `json-c14n-v1` is a versioned restricted JSON encoding, not an implementation

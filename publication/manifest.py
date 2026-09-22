@@ -13,7 +13,8 @@ from typing import Any
 from .media import canonical_media_digests, validate_media_digests_against_runtime
 
 
-_RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_CANONICAL_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_RELEASE_ID = _CANONICAL_DIGEST
 _DECIMAL_SOURCE = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?\Z")
 _DECIMAL_CANONICAL = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?\Z")
 _SCHEMA_PATH = Path(__file__).with_name("snapshot.schema.json")
@@ -40,6 +41,10 @@ _REQUIRED_PROVENANCE_FIELDS = {
     "identity_history",
     "build_freshness",
 }
+# Optional provenance digests. They stay optional so that releases published
+# before the field existed remain verifiable, while any release that carries
+# them is checked for the canonical sha256 shape.
+_OPTIONAL_PROVENANCE_DIGESTS = ("frame_bundle_sha256",)
 
 
 @lru_cache(maxsize=None)
@@ -177,6 +182,13 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
         if not isinstance(manifest[field], str) or not _RELEASE_ID.fullmatch(manifest[field]):
             raise ValueError(f"{field} is not canonical sha256:<lowercase-hex>")
     _require_fields(manifest["provenance"], _REQUIRED_PROVENANCE_FIELDS, "provenance")
+    for field in _OPTIONAL_PROVENANCE_DIGESTS:
+        if field in manifest["provenance"]:
+            value = manifest["provenance"][field]
+            if not isinstance(value, str) or not _CANONICAL_DIGEST.fullmatch(value):
+                raise ValueError(
+                    f"provenance.{field} is not canonical sha256:<lowercase-hex>"
+                )
     if "media_digests" in manifest:
         media_digests = canonical_media_digests(manifest["media_digests"])
         if manifest["media_digests"] != media_digests:

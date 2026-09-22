@@ -67,6 +67,40 @@ def manifest_for(payload: bytes | None = None) -> tuple[dict[str, object], bytes
 
 
 class PublicationManifestTests(unittest.TestCase):
+    def test_optional_frame_bundle_digest_is_accepted_and_validated(self) -> None:
+        manifest, payload = manifest_for()
+        manifest["provenance"] = dict(
+            manifest["provenance"], frame_bundle_sha256="sha256:" + "e" * 64
+        )
+        manifest["release_id"] = release_id_for(manifest)
+
+        stored = canonical_manifest_bytes(manifest)
+
+        self.assertEqual(
+            parse_manifest_bytes(stored)["provenance"]["frame_bundle_sha256"],
+            "sha256:" + "e" * 64,
+        )
+
+    def test_malformed_frame_bundle_digest_is_rejected(self) -> None:
+        for value in (
+            "sha256:" + "E" * 64,
+            "0" * 64,
+            "sha256:" + "e" * 63,
+        ):
+            with self.subTest(value=value):
+                manifest, payload = manifest_for()
+                manifest["provenance"] = dict(
+                    manifest["provenance"], frame_bundle_sha256=value
+                )
+                with self.assertRaisesRegex(ValueError, "frame_bundle_sha256"):
+                    canonical_manifest_bytes(manifest)
+
+    def test_releases_without_a_frame_bundle_digest_still_verify(self) -> None:
+        # Releases published before the field existed must remain verifiable.
+        manifest, payload = manifest_for()
+        self.assertNotIn("frame_bundle_sha256", manifest["provenance"])
+        verify_release(manifest["release_id"], manifest, payload)
+
     def test_known_answer_vectors_define_json_c14n_v1_bytes(self) -> None:
         # Break caught: changing key order, NFC normalization, or compact UTF-8 output.
         for vector in VECTORS["mapping_vectors"]:

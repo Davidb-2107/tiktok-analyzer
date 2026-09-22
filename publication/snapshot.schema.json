@@ -45,7 +45,14 @@
         "voice_profile_digest",
         "identity_history",
         "build_freshness"
-      ]
+      ],
+      "properties": {
+        "frame_bundle_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Digest of the verified sourcing frame bundle the release was built from. Optional: releases published before this field existed do not carry it."
+        }
+      }
     },
     "media_digest": {
       "type": "object",
