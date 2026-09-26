@@ -28,6 +28,7 @@ from vps.release_sync import (
     SyncError,
     _atomic_write,
     _digest_hex,
+    _now,
     _safe_file,
     read_pin,
     write_pin,
@@ -265,7 +266,7 @@ class ReleaseActivator:
         return self.activate(target, actor=actor, reason=f"rollback: {reason}")
 
     def _audit(self, old: str | None, new: str, actor: str, reason: str, *, idempotent: bool) -> None:
-        _append_journal(self.config.journal_path, {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent})
+        _append_journal(self.config.journal_path, {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent, "timestamp": _now()})
 
 
 class CommandHubController:
