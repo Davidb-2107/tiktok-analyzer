@@ -134,6 +134,32 @@ commit. `GET https://tiktok-analyzer.hen8n.com/hub` returned HTTP 200 and
 reported the pinned release, with two niches and channels
 `the.wisejourney` and `viraldtoprw`.
 
+## Addendum 2026-09-26 — current production state
+
+The section above describes production as of 2026-09-18 and is no longer
+current. It is not rewritten; the current state is recorded in the Vault audit
+ledger (`Shared/audits/LEDGER.md` in `Davidb-2107/Wiki_Claude`, sections
+`fixed (permanent-r2-vps-sync, 2026-09-24)` and `* (production-state,
+2026-09-26)`), which is the single home for production evidence.
+
+Verified on 2026-09-26:
+
+- Hub image `sha256:7019d419a190798f693008c9ac8867a43a684c16af42352980dbc130ec2db548`,
+  built from `c89af2857ae7debb24abaca0706adb49f8af9d23` (in-container hashes of
+  `hub.py` and `publication/manifest.py`).
+- Active release `sha256:88a1b59ca828524487711a73aac75aa7eb708d96bc280c0f9144ebca2f7c4320`,
+  activated 2026-09-26 through `vps.activation` after a green private gate;
+  previous `sha256:ec165555ac9a661572c6bedb3bf577488032295d5abae88d4c4ee57d4c97a1b6`.
+  `88a1b59c` republishes `ec165555` with the same payload and media and a
+  corrected provenance digest (`ec165555` fails the gate on a malformed
+  `sot_versions.voice_wpm`). The Hub reads `/hub/state/active-release`;
+  `HUB_SOURCE_CONTEXT` is no longer used in production.
+- VPS checkout fast-forwarded from `6bdb369` to `b469b32` so that a rebuild
+  from it keeps the production guard.
+
+The release `262e9093…` and application commit `c2c0abe` recorded above are
+historical only.
+
 ## Out of scope
 
 Merging, deleting branches, and changing the default branch require a separate
