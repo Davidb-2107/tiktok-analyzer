@@ -147,11 +147,13 @@ Verified on 2026-09-26:
 - Hub image `sha256:7019d419a190798f693008c9ac8867a43a684c16af42352980dbc130ec2db548`,
   built from `c89af2857ae7debb24abaca0706adb49f8af9d23` (in-container hashes of
   `hub.py` and `publication/manifest.py`).
-- Active release `sha256:ec165555ac9a661572c6bedb3bf577488032295d5abae88d4c4ee57d4c97a1b6`,
-  activated 2026-09-24 through `vps.activation`; previous
-  `sha256:b541e2301f9bbd4c235145b4fe2953f21e01bbd1a278298c41d4682313f83139`.
-  The Hub reads `/hub/state/active-release`; `HUB_SOURCE_CONTEXT` is no longer
-  used in production.
+- Active release `sha256:88a1b59ca828524487711a73aac75aa7eb708d96bc280c0f9144ebca2f7c4320`,
+  activated 2026-09-26 through `vps.activation` after a green private gate;
+  previous `sha256:ec165555ac9a661572c6bedb3bf577488032295d5abae88d4c4ee57d4c97a1b6`.
+  `88a1b59c` republishes `ec165555` with the same payload and media and a
+  corrected provenance digest (`ec165555` fails the gate on a malformed
+  `sot_versions.voice_wpm`). The Hub reads `/hub/state/active-release`;
+  `HUB_SOURCE_CONTEXT` is no longer used in production.
 - VPS checkout fast-forwarded from `6bdb369` to `b469b32` so that a rebuild
   from it keeps the production guard.
 
