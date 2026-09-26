@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import stat
 
 import pytest
@@ -160,6 +161,7 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     assert hub.verifications == [release]
     journal = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()]
     assert journal[-1]["new"] == release
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", journal[-1]["timestamp"])
 
 
 def test_activation_is_idempotent_when_already_active(tmp_path):
