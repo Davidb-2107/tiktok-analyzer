@@ -13,6 +13,7 @@ from vps.activation import (
     ActivationLegacyRelease,
     ActiveStateUnknown,
     DigestMismatch,
+    HubUnreachable,
     IncompleteMaterialization,
     LocalGarbageCollector,
     MissingMedia,
@@ -49,6 +50,23 @@ def test_external_verification_identifies_activation_client(monkeypatch):
     assert seen["request"].get_header("Accept") == "application/json"
 
 
+def test_reachability_accepts_http_errors_and_rejects_network_failures(monkeypatch):
+    hub = activation_module.CommandHubController("unused", "https://example.test/hub")
+
+    def http_502(request, timeout):
+        raise activation_module.HTTPError(hub.external_url, 502, "Bad Gateway", {}, None)
+
+    monkeypatch.setattr(activation_module, "urlopen", http_502)
+    hub.check_reachable()
+
+    def unresolved(request, timeout):
+        raise activation_module.URLError("Name or service not known")
+
+    monkeypatch.setattr(activation_module, "urlopen", unresolved)
+    with pytest.raises(HubUnreachable):
+        hub.check_reachable()
+
+
 def test_reload_does_not_inject_a_static_source_context(monkeypatch):
     captured = {}
 
@@ -75,6 +93,9 @@ class Hub:
 
     def verify_external(self, release_id):
         self.verifications.append(release_id)
+
+    def check_reachable(self):
+        pass
 
 
 def make_release(label="A", with_media=True):
@@ -162,6 +183,27 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     journal = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()]
     assert journal[-1]["new"] == release
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", journal[-1]["timestamp"])
+
+
+def test_activation_refuses_before_any_change_when_hub_is_unreachable(tmp_path):
+    cfg = config(tmp_path)
+    release, manifest, payload, media, media_id = make_release()
+    materialize(cfg, release, manifest, payload, media, media_id)
+    write_pin(cfg.pin_path, release, actor="operator", reason="promote")
+    cfg.active_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.active_path.write_text("sha256:" + "1" * 64)
+
+    class UnreachableHub(Hub):
+        def check_reachable(self):
+            raise HubUnreachable("external Hub URL is unreachable")
+
+    hub = UnreachableHub()
+    with pytest.raises(HubUnreachable):
+        ReleaseActivator(cfg, hub).activate(release, actor="operator", reason="promote")
+    assert cfg.active_path.read_text() == "sha256:" + "1" * 64
+    assert not cfg.previous_path.exists()
+    assert not cfg.journal_path.exists()
+    assert hub.reloads == []
 
 
 def test_activation_is_idempotent_when_already_active(tmp_path):

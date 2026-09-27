@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from publication.manifest import parse_manifest_bytes, verify_release
@@ -83,10 +84,16 @@ class ServingMismatch(ActivationError):
     pass
 
 
+class HubUnreachable(ActivationError):
+    pass
+
+
 class HubController(Protocol):
     def reload(self, release_id: str) -> None: ...
 
     def verify_external(self, release_id: str) -> None: ...
+
+    def check_reachable(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -220,6 +227,9 @@ class ReleaseActivator:
             self._audit(active, release_id, actor, reason, idempotent=True)
             return release_id
 
+        # The post-reload check needs the external URL; refuse before touching
+        # state or recreating the Hub if this shell cannot reach it at all.
+        self.hub.check_reachable()
         previous = _read_state(self.config.previous_path, "previous", required=False)
         try:
             _write_state(self.config.active_path, release_id)
@@ -279,6 +289,18 @@ class CommandHubController:
         environment = os.environ.copy()
         environment.pop("HUB_SOURCE_CONTEXT", None)
         subprocess.run(shlex.split(self.reload_command), check=True, env=environment)
+
+    def check_reachable(self) -> None:
+        # Any HTTP answer (even 502) proves the network path; only a transport
+        # failure (DNS, route, timeout) means activation cannot verify from here.
+        request = Request(self.external_url, headers={"User-Agent": "tiktok-analyzer-activation/1"})
+        try:
+            with urlopen(request, timeout=self.timeout):
+                pass
+        except HTTPError:
+            pass
+        except (URLError, OSError) as error:
+            raise HubUnreachable(f"external Hub URL is unreachable from this host: {self.external_url}") from error
 
     def verify_external(self, release_id: str) -> None:
         request = Request(
