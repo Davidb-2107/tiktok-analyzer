@@ -2,15 +2,18 @@
 # so cloudflare-tunnel can reach the backend by its container name. No host
 # port binding — all traffic enters via Cloudflare Tunnel.
 #
+# The image is never built by compose: build it from the tracked tree with
+# `git archive` and the revision label, then check it (vps/README.md,
+# ADR 0007). A missing image makes compose fail instead of rebuilding.
+#
 # Usage on VPS:
 #   cd /home/projects/tiktok-analyzer
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml up -d --no-deps tiktok-analyzer
 
 services:
   tiktok-analyzer:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    image: tiktok-analyzer-hub
+    pull_policy: never
     container_name: tiktok-analyzer
     volumes:
       - tiktok_temp:/app/temp

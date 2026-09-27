@@ -3,6 +3,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 
 import pytest
 import vps.activation as activation_module
@@ -13,8 +14,11 @@ from vps.activation import (
     ActivationLegacyRelease,
     ActiveStateUnknown,
     DigestMismatch,
+    DockerGitInspector,
     GateNotPassed,
     HubUnreachable,
+    ImageChanged,
+    ImageNotAligned,
     IncompleteMaterialization,
     LocalGarbageCollector,
     MissingMedia,
@@ -194,7 +198,8 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     cfg.active_path.write_text("sha256:" + "1" * 64)
     hub = Hub()
 
-    assert ReleaseActivator(cfg, hub, gate_reader=passing_gate(release)).activate(release, actor="operator", reason="promote") == release
+    activator = ReleaseActivator(cfg, hub, gate_reader=passing_gate(release), image_inspector=Inspector())
+    assert activator.activate(release, actor="operator", reason="promote") == release
     assert read_pin(cfg.pin_path) == release
     assert cfg.active_path.read_text().strip() == release
     assert cfg.previous_path.read_text().strip() == "sha256:" + "1" * 64
@@ -206,6 +211,7 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     assert journal[-1]["new"] == release
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", journal[-1]["timestamp"])
     assert journal[-1]["gate_run"] == GATE_RUN_URL
+    assert journal[-1]["image_revision"] == IMAGE_REVISION
 
 
 def test_activation_refuses_before_any_change_when_hub_is_unreachable(tmp_path):
@@ -222,7 +228,9 @@ def test_activation_refuses_before_any_change_when_hub_is_unreachable(tmp_path):
 
     hub = UnreachableHub()
     with pytest.raises(HubUnreachable):
-        ReleaseActivator(cfg, hub, gate_reader=passing_gate(release)).activate(release, actor="operator", reason="promote")
+        ReleaseActivator(cfg, hub, gate_reader=passing_gate(release), image_inspector=Inspector()).activate(
+            release, actor="operator", reason="promote"
+        )
     assert cfg.active_path.read_text() == "sha256:" + "1" * 64
     assert not cfg.previous_path.exists()
     assert not cfg.journal_path.exists()
@@ -442,3 +450,204 @@ def test_gc_deletes_nothing_when_pin_state_is_indeterminate(tmp_path):
     with pytest.raises(ActiveStateUnknown):
         LocalGarbageCollector(cfg).collect()
     assert obsolete.exists()
+
+
+ANALYZER_REF = "a" * 40
+IMAGE_REVISION = "d" * 40
+
+
+class Inspector:
+    """Fake image inspector: container revisions are consumed in order, the last one sticks."""
+
+    def __init__(self, container=(IMAGE_REVISION,), images=None, aligned=(IMAGE_REVISION,)):
+        self.container = list(container)
+        self.images = images or {}
+        self.aligned_revisions = set(aligned)
+        self.calls = []
+
+    def revision(self, kind, ref):
+        self.calls.append((kind, ref))
+        if kind == "image":
+            return self.images.get(ref)
+        assert (kind, ref) == ("container", "tiktok-analyzer")
+        value = self.container.pop(0) if len(self.container) > 1 else self.container[0]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    def aligned(self, analyzer_ref, revision):
+        assert analyzer_ref == ANALYZER_REF
+        return revision in self.aligned_revisions
+
+
+def ready(tmp_path):
+    cfg = config(tmp_path)
+    release, manifest, payload, media, media_id = make_release()
+    materialize(cfg, release, manifest, payload, media, media_id)
+    write_pin(cfg.pin_path, release, actor="operator", reason="promote")
+    cfg.active_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.active_path.write_text("sha256:" + "1" * 64)
+    return cfg, release
+
+
+@pytest.mark.parametrize(
+    "inspector",
+    [None, Inspector(container=(None,)), Inspector(container=("not-a-sha",)), Inspector(container=("e" * 40,)), Inspector(container=(OSError("docker"),))],
+    ids=["no-inspector", "no-label", "malformed-label", "not-aligned", "unreadable"],
+)
+def test_activation_refuses_before_any_change_without_an_aligned_image(tmp_path, inspector):
+    cfg, release = ready(tmp_path)
+    hub = Hub()
+
+    with pytest.raises(ImageNotAligned):
+        ReleaseActivator(cfg, hub, gate_reader=passing_gate(release), image_inspector=inspector).activate(
+            release, actor="operator", reason="promote"
+        )
+    assert cfg.active_path.read_text() == "sha256:" + "1" * 64
+    assert not cfg.previous_path.exists()
+    assert not cfg.journal_path.exists()
+    assert hub.reloads == []
+
+
+@pytest.mark.parametrize("analyzer_ref", [None, "", "b469b32", "A" * 40], ids=["absent", "empty", "short", "uppercase"])
+def test_activation_requires_a_full_analyzer_ref_in_the_attestation(tmp_path, analyzer_ref):
+    cfg, release = ready(tmp_path)
+    overrides = {"analyzer_ref": analyzer_ref}
+    attestation = gate_attestation(release, **overrides)
+    if analyzer_ref is None:
+        record = json.loads(attestation)
+        del record["analyzer_ref"]
+        attestation = json.dumps(record).encode("utf-8")
+    hub = Hub()
+
+    with pytest.raises(GateNotPassed, match="analyzer_ref"):
+        ReleaseActivator(cfg, hub, gate_reader=lambda release_id: attestation, image_inspector=Inspector()).activate(
+            release, actor="operator", reason="promote"
+        )
+    assert hub.reloads == []
+
+
+def test_image_change_during_reload_restores_pointers_and_is_not_masked(tmp_path):
+    cfg, release = ready(tmp_path)
+    old = "sha256:" + "1" * 64
+    hub = Hub()
+    inspector = Inspector(container=(IMAGE_REVISION, "e" * 40))
+
+    with pytest.raises(ImageChanged, match="e{40} is not aligned") as raised:
+        ReleaseActivator(cfg, hub, gate_reader=passing_gate(release), image_inspector=inspector).activate(
+            release, actor="operator", reason="promote"
+        )
+    assert f"before: {IMAGE_REVISION}" in str(raised.value)
+    assert cfg.active_path.read_text().strip() == old
+    assert not cfg.previous_path.exists()
+    assert hub.reloads == [release, old]
+    assert hub.verifications == []
+    assert not cfg.journal_path.exists()
+
+
+def test_rollback_skips_alignment_and_journals_an_optional_revision(tmp_path):
+    cfg = config(tmp_path)
+    active, *active_rest = make_release("A")
+    previous, *previous_rest = make_release("B")
+    materialize(cfg, active, *active_rest)
+    materialize(cfg, previous, *previous_rest)
+    cfg.active_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.active_path.write_text(active)
+    cfg.previous_path.write_text(previous)
+    write_pin(cfg.pin_path, active, actor="operator", reason="promote")
+    unaligned = Inspector(container=(OSError("docker"),), aligned=())
+
+    ReleaseActivator(cfg, Hub(), image_inspector=unaligned).rollback(actor="operator", reason="restore previous")
+    entry = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()][-1]
+    assert entry["new"] == previous
+    assert entry["image_revision"] is None
+
+
+def test_check_verifies_the_active_release_and_running_container(tmp_path):
+    cfg, release = ready(tmp_path)
+    cfg.active_path.write_text(release)
+    hub = Hub()
+    inspector = Inspector()
+
+    result = ReleaseActivator(cfg, hub, gate_reader=passing_gate(release), image_inspector=inspector).check()
+    assert result == {"active": release, "analyzer_ref": ANALYZER_REF, "image_revision": IMAGE_REVISION}
+    assert inspector.calls == [("container", "tiktok-analyzer")]
+    assert hub.verifications == [release]
+    assert hub.reloads == []
+
+
+def test_check_image_inspects_a_candidate_image_without_the_hub(tmp_path):
+    cfg, release = ready(tmp_path)
+    cfg.active_path.write_text(release)
+    hub = Hub()
+    inspector = Inspector(images={"tiktok-analyzer-hub": "e" * 40})
+    activator = ReleaseActivator(cfg, hub, gate_reader=passing_gate(release), image_inspector=inspector)
+
+    with pytest.raises(ImageNotAligned, match="image tiktok-analyzer-hub"):
+        activator.check("tiktok-analyzer-hub")
+    inspector.images["tiktok-analyzer-hub"] = IMAGE_REVISION
+    assert activator.check("tiktok-analyzer-hub")["image_revision"] == IMAGE_REVISION
+    assert ("container", "tiktok-analyzer") not in inspector.calls
+    assert hub.verifications == []
+
+
+def test_check_requires_the_active_release_attestation(tmp_path):
+    cfg, release = ready(tmp_path)
+    cfg.active_path.write_text(release)
+
+    with pytest.raises(GateNotPassed):
+        ReleaseActivator(cfg, Hub(), gate_reader=lambda release_id: None, image_inspector=Inspector()).check()
+
+
+def test_docker_inspector_names_the_object_type(monkeypatch):
+    seen = []
+
+    class Result:
+        stdout = json.dumps({"org.opencontainers.image.revision": IMAGE_REVISION})
+
+    def fake_run(command, **kwargs):
+        seen.append(command)
+        return Result()
+
+    monkeypatch.setattr(activation_module.subprocess, "run", fake_run)
+    inspector = DockerGitInspector()
+    assert inspector.revision("container", "tiktok-analyzer") == IMAGE_REVISION
+    assert inspector.revision("image", "tiktok-analyzer-hub") == IMAGE_REVISION
+    assert [command[2:4] for command in seen] == [["--type", "container"], ["--type", "image"]]
+
+
+def _git(repo, *args):
+    result = subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=test", "-c", "user.email=test@example.test", "-c", "core.autocrlf=false", *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _commit(repo, path, content):
+    target = repo / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content)
+    _git(repo, "add", path)
+    _git(repo, "commit", "-q", "-m", path)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_alignment_compares_only_image_inputs(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    gated = _commit(repo, "publication/manifest.py", "v1")
+    vps_only = _commit(repo, "vps/activation.py", "check")
+    ignore = _commit(repo, ".dockerignore", "temp")
+    contract = _commit(repo, "publication/manifest.py", "v2")
+    inspector = DockerGitInspector(repo)
+
+    assert inspector.aligned(gated, gated)
+    assert inspector.aligned(gated, vps_only)
+    assert not inspector.aligned(gated, ignore)
+    assert not inspector.aligned(vps_only, contract)
+    with pytest.raises(ImageNotAligned, match="git fetch"):
+        inspector.aligned(gated, "f" * 40)
