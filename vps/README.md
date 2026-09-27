@@ -38,6 +38,9 @@ anything that is not the current pin, is not completely materialized, is
 legacy, or fails revalidation. The Hub reads the canonical one-line
 `active-release` state from the read-only state-directory mount; activation is
 its only writer. The external `/hub` check must return the same `release_id`.
+Run activation from a shell that can reach `RELEASE_ACTIVATE_EXTERNAL_URL`
+(the VPS host, not the ttyd container): it refuses with `HubUnreachable`
+before touching state or reloading the Hub when that URL gives no HTTP answer.
 If the state is absent, malformed, unreadable, or a symlink, the Hub fails
 closed rather than falling back to a stale environment value:
 
