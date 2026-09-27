@@ -13,6 +13,7 @@ from vps.activation import (
     ActivationLegacyRelease,
     ActiveStateUnknown,
     DigestMismatch,
+    GateNotPassed,
     HubUnreachable,
     IncompleteMaterialization,
     LocalGarbageCollector,
@@ -22,6 +23,27 @@ from vps.activation import (
     ReleaseActivator,
 )
 from vps.release_sync import read_pin, write_pin
+
+GATE_RUN_URL = "https://github.com/Davidb-2107/Wiki_Claude/actions/runs/1"
+
+
+def gate_attestation(release, **overrides):
+    record = {
+        "schema_version": 1,
+        "result": "pass",
+        "release_id": release,
+        "gate_run_id": "1",
+        "gate_run_url": GATE_RUN_URL,
+        "analyzer_ref": "a" * 40,
+        "baseline_release_id": "sha256:" + "b" * 64,
+        "vault_commit": "c" * 40,
+    }
+    record.update(overrides)
+    return json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def passing_gate(release):
+    return lambda release_id: gate_attestation(release) if release_id == release else None
 
 
 def test_external_verification_identifies_activation_client(monkeypatch):
@@ -172,7 +194,7 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     cfg.active_path.write_text("sha256:" + "1" * 64)
     hub = Hub()
 
-    assert ReleaseActivator(cfg, hub).activate(release, actor="operator", reason="promote") == release
+    assert ReleaseActivator(cfg, hub, gate_reader=passing_gate(release)).activate(release, actor="operator", reason="promote") == release
     assert read_pin(cfg.pin_path) == release
     assert cfg.active_path.read_text().strip() == release
     assert cfg.previous_path.read_text().strip() == "sha256:" + "1" * 64
@@ -183,6 +205,7 @@ def test_activation_revalidates_and_records_previous(tmp_path):
     journal = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()]
     assert journal[-1]["new"] == release
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z", journal[-1]["timestamp"])
+    assert journal[-1]["gate_run"] == GATE_RUN_URL
 
 
 def test_activation_refuses_before_any_change_when_hub_is_unreachable(tmp_path):
@@ -199,11 +222,58 @@ def test_activation_refuses_before_any_change_when_hub_is_unreachable(tmp_path):
 
     hub = UnreachableHub()
     with pytest.raises(HubUnreachable):
-        ReleaseActivator(cfg, hub).activate(release, actor="operator", reason="promote")
+        ReleaseActivator(cfg, hub, gate_reader=passing_gate(release)).activate(release, actor="operator", reason="promote")
     assert cfg.active_path.read_text() == "sha256:" + "1" * 64
     assert not cfg.previous_path.exists()
     assert not cfg.journal_path.exists()
     assert hub.reloads == []
+
+
+@pytest.mark.parametrize(
+    "attestation",
+    [
+        None,
+        b"not json",
+        gate_attestation("sha256:" + "9" * 64),
+        "fail",
+        "schema",
+        "no-url",
+    ],
+    ids=["absent", "malformed", "other-release", "not-pass", "unknown-schema", "no-run-url"],
+)
+def test_activation_requires_a_passing_gate_attestation(tmp_path, attestation):
+    cfg = config(tmp_path)
+    release, manifest, payload, media, media_id = make_release()
+    materialize(cfg, release, manifest, payload, media, media_id)
+    write_pin(cfg.pin_path, release, actor="operator", reason="promote")
+    cfg.active_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.active_path.write_text("sha256:" + "1" * 64)
+    attestation = {
+        "fail": gate_attestation(release, result="fail"),
+        "schema": gate_attestation(release, schema_version=2),
+        "no-url": gate_attestation(release, gate_run_url=""),
+    }.get(attestation, attestation)
+    hub = Hub()
+
+    with pytest.raises(GateNotPassed):
+        ReleaseActivator(cfg, hub, gate_reader=lambda release_id: attestation).activate(
+            release, actor="operator", reason="promote"
+        )
+    assert cfg.active_path.read_text() == "sha256:" + "1" * 64
+    assert not cfg.previous_path.exists()
+    assert not cfg.journal_path.exists()
+    assert hub.reloads == []
+
+
+def test_activation_without_a_gate_reader_fails_closed(tmp_path):
+    cfg = config(tmp_path)
+    release, manifest, payload, media, media_id = make_release()
+    materialize(cfg, release, manifest, payload, media, media_id)
+    write_pin(cfg.pin_path, release, actor="operator", reason="promote")
+
+    with pytest.raises(GateNotPassed):
+        ReleaseActivator(cfg, Hub()).activate(release, actor="operator", reason="promote")
+    assert not cfg.active_path.exists()
 
 
 def test_activation_is_idempotent_when_already_active(tmp_path):
@@ -284,6 +354,22 @@ def test_rollback_updates_pin_then_uses_same_activation_primitive(tmp_path):
     assert cfg.previous_path.read_text().strip() == active
     assert hub.reloads == [previous]
     assert hub.verifications == [previous]
+    entry = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()][-1]
+    assert entry["gate_run"] is None
+    assert entry["reason"] == "rollback: restore previous"
+
+
+def test_public_activation_cannot_skip_the_gate(tmp_path):
+    cfg = config(tmp_path)
+    release, manifest, payload, media, media_id = make_release()
+    materialize(cfg, release, manifest, payload, media, media_id)
+    write_pin(cfg.pin_path, release, actor="operator", reason="promote")
+
+    with pytest.raises(TypeError):
+        ReleaseActivator(cfg, Hub()).activate(release, actor="operator", reason="promote", require_gate=False)
+    with pytest.raises(TypeError):
+        ReleaseActivator(cfg, Hub()).activate(release, actor="operator", reason="promote", gate_exempt=True)
+    assert not cfg.active_path.exists()
 
 
 def test_rollback_syncs_previous_when_local_copy_is_missing(tmp_path):

@@ -41,6 +41,12 @@ its only writer. The external `/hub` check must return the same `release_id`.
 Run activation from a shell that can reach `RELEASE_ACTIVATE_EXTERNAL_URL`
 (the VPS host, not the ttyd container): it refuses with `HubUnreachable`
 before touching state or reloading the Hub when that URL gives no HTTP answer.
+A forward activation also requires the private gate attestation
+`<RELEASE_R2_PREFIX>gates/sha256/<digest>.json`, which the Vault
+`published-snapshot-gate.yml` writes only when every gate check passes. It is
+read with the same read-only R2 credentials as the sync; a missing, malformed
+or non-pass attestation raises `GateNotPassed` before any change, and the
+journal records the gate run URL. Rollback to the previous release is exempt.
 If the state is absent, malformed, unreadable, or a symlink, the Hub fails
 closed rather than falling back to a stale environment value:
 
