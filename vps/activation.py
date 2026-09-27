@@ -219,7 +219,10 @@ class ReleaseActivator:
         self.sync_runner = sync_runner
         self.gate_reader = gate_reader
 
-    def activate(self, release_id: str, *, actor: str, reason: str, require_gate: bool = True) -> str:
+    def activate(self, release_id: str, *, actor: str, reason: str) -> str:
+        return self._activate(release_id, actor=actor, reason=reason, gate_exempt=False)
+
+    def _activate(self, release_id: str, *, actor: str, reason: str, gate_exempt: bool) -> str:
         if not actor.strip() or not reason.strip():
             raise ActivationError("activation actor and reason are required")
         try:
@@ -238,7 +241,7 @@ class ReleaseActivator:
             self._audit(active, release_id, actor, reason, idempotent=True)
             return release_id
 
-        gate_run = self._require_gate(release_id) if require_gate else None
+        gate_run = None if gate_exempt else self._require_gate(release_id)
         # The post-reload check needs the external URL; refuse before touching
         # state or recreating the Hub if this shell cannot reach it at all.
         self.hub.check_reachable()
@@ -285,9 +288,10 @@ class ReleaseActivator:
             if not prepared:
                 raise RollbackPreparationFailed(f"rollback release is not materialized: {target}")
             _validate_local_release(self.config, target)
-        # Rollback restores the previous active release, which may predate gate
-        # attestations; forward activations always require one.
-        return self.activate(target, actor=actor, reason=f"rollback: {reason}", require_gate=False)
+        # Only rollback may skip the gate: it restores the previous active
+        # release, which may predate gate attestations. The journal records it
+        # with gate_run null and a "rollback: " reason (ADR 0005).
+        return self._activate(target, actor=actor, reason=f"rollback: {reason}", gate_exempt=True)
 
     def _require_gate(self, release_id: str) -> str:
         if self.gate_reader is None:

@@ -354,6 +354,22 @@ def test_rollback_updates_pin_then_uses_same_activation_primitive(tmp_path):
     assert cfg.previous_path.read_text().strip() == active
     assert hub.reloads == [previous]
     assert hub.verifications == [previous]
+    entry = [json.loads(line) for line in cfg.journal_path.read_text().splitlines()][-1]
+    assert entry["gate_run"] is None
+    assert entry["reason"] == "rollback: restore previous"
+
+
+def test_public_activation_cannot_skip_the_gate(tmp_path):
+    cfg = config(tmp_path)
+    release, manifest, payload, media, media_id = make_release()
+    materialize(cfg, release, manifest, payload, media, media_id)
+    write_pin(cfg.pin_path, release, actor="operator", reason="promote")
+
+    with pytest.raises(TypeError):
+        ReleaseActivator(cfg, Hub()).activate(release, actor="operator", reason="promote", require_gate=False)
+    with pytest.raises(TypeError):
+        ReleaseActivator(cfg, Hub()).activate(release, actor="operator", reason="promote", gate_exempt=True)
+    assert not cfg.active_path.exists()
 
 
 def test_rollback_syncs_previous_when_local_copy_is_missing(tmp_path):
