@@ -88,6 +88,10 @@ class HubUnreachable(ActivationError):
     pass
 
 
+class GateNotPassed(ActivationError):
+    pass
+
+
 class HubController(Protocol):
     def reload(self, release_id: str) -> None: ...
 
@@ -203,12 +207,19 @@ def _append_journal(path: Path, entry: Mapping[str, object]) -> None:
 
 
 class ReleaseActivator:
-    def __init__(self, config: ActivationConfig, hub: HubController, sync_runner: Callable[[], bool] | None = None):
+    def __init__(
+        self,
+        config: ActivationConfig,
+        hub: HubController,
+        sync_runner: Callable[[], bool] | None = None,
+        gate_reader: Callable[[str], bytes | None] | None = None,
+    ):
         self.config = config
         self.hub = hub
         self.sync_runner = sync_runner
+        self.gate_reader = gate_reader
 
-    def activate(self, release_id: str, *, actor: str, reason: str) -> str:
+    def activate(self, release_id: str, *, actor: str, reason: str, require_gate: bool = True) -> str:
         if not actor.strip() or not reason.strip():
             raise ActivationError("activation actor and reason are required")
         try:
@@ -227,6 +238,7 @@ class ReleaseActivator:
             self._audit(active, release_id, actor, reason, idempotent=True)
             return release_id
 
+        gate_run = self._require_gate(release_id) if require_gate else None
         # The post-reload check needs the external URL; refuse before touching
         # state or recreating the Hub if this shell cannot reach it at all.
         self.hub.check_reachable()
@@ -255,7 +267,7 @@ class ReleaseActivator:
             if isinstance(error, ServingMismatch):
                 raise
             raise ServingMismatch(f"Hub did not serve requested release: {release_id}") from error
-        self._audit(active, release_id, actor, reason, idempotent=False)
+        self._audit(active, release_id, actor, reason, idempotent=False, gate_run=gate_run)
         return release_id
 
     def rollback(self, *, actor: str, reason: str) -> str:
@@ -273,10 +285,36 @@ class ReleaseActivator:
             if not prepared:
                 raise RollbackPreparationFailed(f"rollback release is not materialized: {target}")
             _validate_local_release(self.config, target)
-        return self.activate(target, actor=actor, reason=f"rollback: {reason}")
+        # Rollback restores the previous active release, which may predate gate
+        # attestations; forward activations always require one.
+        return self.activate(target, actor=actor, reason=f"rollback: {reason}", require_gate=False)
 
-    def _audit(self, old: str | None, new: str, actor: str, reason: str, *, idempotent: bool) -> None:
-        _append_journal(self.config.journal_path, {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent, "timestamp": _now()})
+    def _require_gate(self, release_id: str) -> str:
+        if self.gate_reader is None:
+            raise GateNotPassed("no gate attestation reader is configured")
+        try:
+            data = self.gate_reader(release_id)
+        except Exception as error:
+            raise GateNotPassed(f"gate attestation is unreadable: {release_id}") from error
+        if data is None:
+            raise GateNotPassed(f"no passing private gate is recorded for {release_id}")
+        try:
+            record = json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as error:
+            raise GateNotPassed(f"gate attestation is malformed: {release_id}") from error
+        if (
+            not isinstance(record, Mapping)
+            or record.get("schema_version") != 1
+            or record.get("result") != "pass"
+            or record.get("release_id") != release_id
+            or not isinstance(record.get("gate_run_url"), str)
+            or not record["gate_run_url"].strip()
+        ):
+            raise GateNotPassed(f"gate attestation does not record a pass for {release_id}")
+        return record["gate_run_url"]
+
+    def _audit(self, old: str | None, new: str, actor: str, reason: str, *, idempotent: bool, gate_run: str | None = None) -> None:
+        _append_journal(self.config.journal_path, {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent, "gate_run": gate_run, "timestamp": _now()})
 
 
 class CommandHubController:
@@ -376,6 +414,15 @@ def _sync_runner() -> Callable[[], bool]:
     return run
 
 
+def _gate_reader() -> Callable[[str], bytes | None]:
+    def read(release_id: str) -> bytes | None:
+        config = SyncConfig.from_env()
+        store = S3ObjectStore(endpoint=config.endpoint, bucket=config.bucket, region=config.region, access_key=config.access_key, secret_key=config.secret_key)
+        return store.get(f"{config.prefix}gates/sha256/{_digest_hex(release_id)}.json")
+
+    return read
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -399,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         config = ActivationConfig.from_env()
         hub = CommandHubController(config.reload_command, config.external_url)
-        activator = ReleaseActivator(config, hub, _sync_runner() if args.command == "rollback" else None)
+        activator = ReleaseActivator(config, hub, _sync_runner() if args.command == "rollback" else None, _gate_reader())
         if args.command == "activate":
             activator.activate(args.digest, actor=args.actor, reason=args.reason)
         else:
