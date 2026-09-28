@@ -37,6 +37,11 @@ from vps.release_sync import (
 
 
 LOG = logging.getLogger("tiktok_analyzer.activation")
+_COMMIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
+# Everything that can reach the Hub image build context (ADR 0007).
+_IMAGE_INPUTS = ("Dockerfile.prod", ".dockerignore", ".gitattributes", "backend", "publication", "frontend")
+_HUB_CONTAINER = "tiktok-analyzer"
+_REVISION_LABEL = "org.opencontainers.image.revision"
 _MEDIA_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}(?:" + "|".join(re.escape(ext) for ext in MEDIA_EXTENSIONS) + r")\Z")
 
 
@@ -92,12 +97,26 @@ class GateNotPassed(ActivationError):
     pass
 
 
+class ImageNotAligned(ActivationError):
+    pass
+
+
+class ImageChanged(ActivationError):
+    """The Hub image changed during reload; only the release pointers were restored."""
+
+
 class HubController(Protocol):
     def reload(self, release_id: str) -> None: ...
 
     def verify_external(self, release_id: str) -> None: ...
 
     def check_reachable(self) -> None: ...
+
+
+class ImageInspector(Protocol):
+    def revision(self, kind: str, ref: str) -> str | None: ...
+
+    def aligned(self, analyzer_ref: str, revision: str) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -213,11 +232,13 @@ class ReleaseActivator:
         hub: HubController,
         sync_runner: Callable[[], bool] | None = None,
         gate_reader: Callable[[str], bytes | None] | None = None,
+        image_inspector: ImageInspector | None = None,
     ):
         self.config = config
         self.hub = hub
         self.sync_runner = sync_runner
         self.gate_reader = gate_reader
+        self.image_inspector = image_inspector
 
     def activate(self, release_id: str, *, actor: str, reason: str) -> str:
         return self._activate(release_id, actor=actor, reason=reason, gate_exempt=False)
@@ -238,10 +259,13 @@ class ReleaseActivator:
                 self.hub.verify_external(release_id)
             except Exception as error:
                 raise ServingMismatch(f"Hub does not serve requested release: {release_id}") from error
-            self._audit(active, release_id, actor, reason, idempotent=True)
+            self._audit(active, release_id, actor, reason, idempotent=True, image_revision=self._optional_revision())
             return release_id
 
-        gate_run = None if gate_exempt else self._require_gate(release_id)
+        gate_run = analyzer_ref = image_revision = None
+        if not gate_exempt:
+            gate_run, analyzer_ref = self._require_gate(release_id)
+            image_revision = self._require_aligned_image(analyzer_ref)
         # The post-reload check needs the external URL; refuse before touching
         # state or recreating the Hub if this shell cannot reach it at all.
         self.hub.check_reachable()
@@ -258,6 +282,12 @@ class ReleaseActivator:
             raise ActivationError("active state could not be written") from error
         try:
             self.hub.reload(release_id)
+            if analyzer_ref is not None:
+                # Detection only: a mismatch restores the release pointers,
+                # not the previous image; the operator must redeploy it.
+                image_revision = self._require_aligned_image(
+                    analyzer_ref, error=ImageChanged, context=f"after reload (before: {image_revision})"
+                )
             self.hub.verify_external(release_id)
         except Exception as error:
             try:
@@ -267,11 +297,28 @@ class ReleaseActivator:
                     self.hub.reload(active)
             except Exception as restore_error:
                 raise ActiveStateUnknown("activation failed and active state could not be restored") from restore_error
-            if isinstance(error, ServingMismatch):
+            if isinstance(error, (ServingMismatch, ImageChanged)):
                 raise
             raise ServingMismatch(f"Hub did not serve requested release: {release_id}") from error
-        self._audit(active, release_id, actor, reason, idempotent=False, gate_run=gate_run)
+        if gate_exempt:
+            image_revision = self._optional_revision()
+        self._audit(active, release_id, actor, reason, idempotent=False, gate_run=gate_run, image_revision=image_revision)
         return release_id
+
+    def check(self, image: str | None = None) -> dict[str, str]:
+        """Read-only: is the active release gated and served by an aligned image?"""
+        active = _read_state(self.config.active_path, "active", required=True)
+        assert active is not None
+        _, analyzer_ref = self._require_gate(active)
+        if image is not None:
+            revision = self._require_aligned_image(analyzer_ref, kind="image", ref=image)
+        else:
+            revision = self._require_aligned_image(analyzer_ref)
+            try:
+                self.hub.verify_external(active)
+            except Exception as error:
+                raise ServingMismatch(f"Hub does not serve the active release: {active}") from error
+        return {"active": active, "analyzer_ref": analyzer_ref, "image_revision": revision}
 
     def rollback(self, *, actor: str, reason: str) -> str:
         active = _read_state(self.config.active_path, "active", required=True)
@@ -293,7 +340,7 @@ class ReleaseActivator:
         # with gate_run null and a "rollback: " reason (ADR 0005).
         return self._activate(target, actor=actor, reason=f"rollback: {reason}", gate_exempt=True)
 
-    def _require_gate(self, release_id: str) -> str:
+    def _require_gate(self, release_id: str) -> tuple[str, str]:
         if self.gate_reader is None:
             raise GateNotPassed("no gate attestation reader is configured")
         try:
@@ -315,10 +362,59 @@ class ReleaseActivator:
             or not record["gate_run_url"].strip()
         ):
             raise GateNotPassed(f"gate attestation does not record a pass for {release_id}")
-        return record["gate_run_url"]
+        analyzer_ref = record.get("analyzer_ref")
+        if not isinstance(analyzer_ref, str) or not _COMMIT_SHA.fullmatch(analyzer_ref):
+            raise GateNotPassed(f"gate attestation has no valid analyzer_ref for {release_id}")
+        return record["gate_run_url"], analyzer_ref
 
-    def _audit(self, old: str | None, new: str, actor: str, reason: str, *, idempotent: bool, gate_run: str | None = None) -> None:
-        _append_journal(self.config.journal_path, {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent, "gate_run": gate_run, "timestamp": _now()})
+    def _require_aligned_image(
+        self,
+        analyzer_ref: str,
+        *,
+        kind: str = "container",
+        ref: str = _HUB_CONTAINER,
+        error: type[ActivationError] = ImageNotAligned,
+        context: str = "",
+    ) -> str:
+        where = f"{kind} {ref}" + (f" {context}" if context else "")
+        if self.image_inspector is None:
+            raise error("no image inspector is configured")
+        try:
+            revision = self.image_inspector.revision(kind, ref)
+        except Exception as cause:
+            raise error(f"cannot read the {_REVISION_LABEL} label of {where}") from cause
+        if not isinstance(revision, str) or not _COMMIT_SHA.fullmatch(revision):
+            raise error(f"{where} carries no valid {_REVISION_LABEL} label: {revision!r}")
+        try:
+            aligned = self.image_inspector.aligned(analyzer_ref, revision)
+        except Exception as cause:
+            raise error(f"cannot compare {where} revision {revision} with {analyzer_ref}: {cause}") from cause
+        if not aligned:
+            raise error(f"{where} revision {revision} is not aligned with gate analyzer_ref {analyzer_ref}")
+        return revision
+
+    def _optional_revision(self) -> str | None:
+        # Journal only: a rollback must not fail on an unreadable label.
+        try:
+            return self.image_inspector.revision("container", _HUB_CONTAINER) if self.image_inspector else None
+        except Exception:
+            return None
+
+    def _audit(
+        self,
+        old: str | None,
+        new: str,
+        actor: str,
+        reason: str,
+        *,
+        idempotent: bool,
+        gate_run: str | None = None,
+        image_revision: str | None = None,
+    ) -> None:
+        _append_journal(
+            self.config.journal_path,
+            {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent, "gate_run": gate_run, "image_revision": image_revision, "timestamp": _now()},
+        )
 
 
 class CommandHubController:
@@ -356,6 +452,36 @@ class CommandHubController:
             raise ServingMismatch(f"external Hub check failed: {self.external_url}") from error
         if not isinstance(payload, Mapping) or payload.get("release_id") != release_id:
             raise ServingMismatch(f"external Hub serves a different release than {release_id}")
+
+
+class DockerGitInspector:
+    """Reads the Hub revision label from Docker and compares image inputs in this checkout."""
+
+    def __init__(self, repo: Path | None = None):
+        self.repo = repo or Path(__file__).resolve().parents[1]
+
+    def revision(self, kind: str, ref: str) -> str | None:
+        # --type is explicit: an image and a container may share a name.
+        result = subprocess.run(
+            ["docker", "inspect", "--type", kind, "--format", "{{json .Config.Labels}}", ref],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        labels = json.loads(result.stdout) or {}
+        return labels.get(_REVISION_LABEL)
+
+    def aligned(self, analyzer_ref: str, revision: str) -> bool:
+        for sha in (analyzer_ref, revision):
+            if self._git("cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+                raise ImageNotAligned(f"commit {sha} is not in {self.repo}; run git fetch")
+        diff = self._git("diff", "--quiet", analyzer_ref, revision, "--", *_IMAGE_INPUTS)
+        if diff.returncode not in (0, 1):
+            raise ImageNotAligned(f"git diff failed in {self.repo}: {diff.stderr.strip()}")
+        return diff.returncode == 0
+
+    def _git(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True)
 
 
 class LocalGarbageCollector:
@@ -438,6 +564,8 @@ def _parser() -> argparse.ArgumentParser:
     rollback.add_argument("--actor", required=True)
     rollback.add_argument("--reason", required=True)
     subparsers.add_parser("gc")
+    check = subparsers.add_parser("check")
+    check.add_argument("--image", help="check a built image before deploying it instead of the running container")
     return parser
 
 
@@ -450,8 +578,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         config = ActivationConfig.from_env()
         hub = CommandHubController(config.reload_command, config.external_url)
-        activator = ReleaseActivator(config, hub, _sync_runner() if args.command == "rollback" else None, _gate_reader())
-        if args.command == "activate":
+        activator = ReleaseActivator(
+            config, hub, _sync_runner() if args.command == "rollback" else None, _gate_reader(), DockerGitInspector()
+        )
+        if args.command == "check":
+            print(json.dumps(activator.check(args.image), sort_keys=True))
+        elif args.command == "activate":
             activator.activate(args.digest, actor=args.actor, reason=args.reason)
         else:
             activator.rollback(actor=args.actor, reason=args.reason)
