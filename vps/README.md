@@ -16,7 +16,8 @@ python -m vps.release_sync pin \
   --reason "promote validated transition release"
 ```
 
-Install the checkout at `/opt/tiktok-analyzer`, create the `tiktok-sync` user,
+Install the checkout at `/home/projects/tiktok-analyzer` (the same checkout
+builds the Hub image and runs activation), create the `tiktok-sync` user,
 copy `release-sync.env.example` to `/etc/tiktok-analyzer/release-sync.env`
 with mode `0600`, and grant that user write access only to the state, release,
 and media roots. The state directory is a shared group boundary: make it
