@@ -51,7 +51,7 @@ def _path_mkdir_compat(self, *args, **kwargs):
 _import_patches.setattr(Path, "mkdir", _path_mkdir_compat)
 
 try:
-    import main  # noqa: E402
+    import main
 finally:
     _import_patches.undo()
 

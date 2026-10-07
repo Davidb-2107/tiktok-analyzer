@@ -48,12 +48,14 @@ def make_release(with_media=True):
         },
     }
     if with_media:
-        manifest["media_digests"] = [{
-            "media_id": "frameA123",
-            "extension": ".jpg",
-            "sha256": hashlib.sha256(media).hexdigest(),
-            "size": len(media),
-        }]
+        manifest["media_digests"] = [
+            {
+                "media_id": "frameA123",
+                "extension": ".jpg",
+                "sha256": hashlib.sha256(media).hexdigest(),
+                "size": len(media),
+            }
+        ]
     manifest["release_id"] = release_id_for(manifest)
     return release_id_for(manifest), canonical_manifest_bytes(manifest), payload, media
 
@@ -118,7 +120,7 @@ def test_legacy_refused_and_active_untouched(tmp_path):
 
 
 def test_media_digest_mismatch_does_not_materialize(tmp_path):
-    release, manifest, payload, media = make_release()
+    release, manifest, payload, _media = make_release()
     cfg = config(tmp_path)
     write_pin(cfg.pin_path, release, actor="operator", reason="test")
     active = cfg.release_root / "active.marker"

@@ -25,7 +25,6 @@ from typing import Protocol
 from publication.manifest import parse_manifest_bytes, verify_release
 from publication.media import media_object_key, require_media_digests, verify_media_bytes
 
-
 LOG = logging.getLogger("tiktok_analyzer.release_sync")
 _PIN = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
@@ -143,7 +142,7 @@ class SyncConfig:
     notify_command: str | None = None
 
     @classmethod
-    def from_env(cls) -> "SyncConfig":
+    def from_env(cls) -> SyncConfig:
         region = _require_env("RELEASE_R2_REGION")
         if region != "auto":
             raise SyncError("RELEASE_R2_REGION must be auto")

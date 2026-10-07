@@ -4,7 +4,6 @@ import pytest
 
 from publication.release_state import ReleaseStateError, read_release_state
 
-
 RELEASE_ID = "sha256:" + "a" * 64
 
 

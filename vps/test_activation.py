@@ -6,8 +6,8 @@ import stat
 import subprocess
 
 import pytest
-import vps.activation as activation_module
 
+import vps.activation as activation_module
 from publication.manifest import canonical_manifest_bytes, canonical_payload_bytes, release_id_for
 from vps.activation import (
     ActivationConfig,

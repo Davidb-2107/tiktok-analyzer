@@ -15,8 +15,8 @@ for k in ("R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
 pytest.importorskip("faster_whisper")
 pytest.importorskip("yt_dlp")
 
-import main  # noqa: E402
-from fastapi import HTTPException  # noqa: E402
+import main
+from fastapi import HTTPException
 
 
 class _FakeResp:

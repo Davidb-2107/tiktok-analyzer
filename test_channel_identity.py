@@ -182,9 +182,7 @@ class ChannelIdentityTests(unittest.TestCase):
         record = _channel()
         record["project_id"] = "other_project"
         with self.assertRaisesRegex(ValueError, "project_id"):
-            validate_identity_index(
-                {"projects": {"neon_psycho": {"channels": [record]}}}
-            )
+            validate_identity_index({"projects": {"neon_psycho": {"channels": [record]}}})
 
     def test_touching_intervals_are_not_overlapping(self):
         history = [
@@ -199,25 +197,21 @@ class ChannelIdentityTests(unittest.TestCase):
 
     def test_runtime_required_fields_are_loaded_from_checked_in_schema(self):
         schema = json.loads(
-            Path(__file__).with_name("publication")
-            .joinpath("snapshot.schema.json")
-            .read_text(encoding="utf-8")
+            Path(__file__).with_name("publication").joinpath("snapshot.schema.json").read_text(encoding="utf-8")
         )
         required = schema["$defs"]["runtime"]["required"]
         for field in required:
             runtime = _runtime()
             del runtime[field]
-            with self.subTest(field=field):
-                with self.assertRaisesRegex(ValueError, "missing required fields"):
-                    validate_runtime_payload(runtime, project_id="neon_psycho")
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "missing required fields"):
+                validate_runtime_payload(runtime, project_id="neon_psycho")
 
         nested_required = schema["$defs"]["resolved_compilation_inputs"]["required"]
         for field in nested_required:
             runtime = _runtime()
             del runtime["resolved_compilation_inputs"][field]
-            with self.subTest(nested_field=field):
-                with self.assertRaisesRegex(ValueError, "missing required fields"):
-                    validate_runtime_payload(runtime, project_id="neon_psycho")
+            with self.subTest(nested_field=field), self.assertRaisesRegex(ValueError, "missing required fields"):
+                validate_runtime_payload(runtime, project_id="neon_psycho")
 
     def test_malformed_taxonomy_and_channel_records_are_rejected(self):
         runtime = _runtime()
@@ -245,9 +239,8 @@ class ChannelIdentityTests(unittest.TestCase):
         for field in ("target_duration_s", "shot_duration_s"):
             runtime = _runtime()
             runtime["resolved_compilation_inputs"][field] = []
-            with self.subTest(field=field):
-                with self.assertRaisesRegex(ValueError, "non-empty"):
-                    validate_runtime_payload(runtime, project_id="neon_psycho")
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "non-empty"):
+                validate_runtime_payload(runtime, project_id="neon_psycho")
 
         invalid_values = {
             "target_wpm": "215.0",
@@ -257,9 +250,8 @@ class ChannelIdentityTests(unittest.TestCase):
         for field, value in invalid_values.items():
             runtime = _runtime()
             runtime["resolved_compilation_inputs"][field] = value
-            with self.subTest(field=field):
-                with self.assertRaisesRegex(ValueError, "decimal-v1"):
-                    validate_runtime_payload(runtime, project_id="neon_psycho")
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "decimal-v1"):
+                validate_runtime_payload(runtime, project_id="neon_psycho")
 
     def test_subformula_and_video_assignment_keys_are_channel_scoped(self):
         runtime = _runtime()
@@ -318,9 +310,8 @@ class ChannelIdentityTests(unittest.TestCase):
         ):
             runtime = _runtime()
             runtime[field] = [item]
-            with self.subTest(field=field):
-                with self.assertRaisesRegex(ValueError, "not declared"):
-                    validate_runtime_payload(runtime, project_id="neon_psycho")
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "not declared"):
+                validate_runtime_payload(runtime, project_id="neon_psycho")
 
     @contextmanager
     def _temporary_transcript(self, *, channel="@old_handle", channel_id="frozen-id"):
@@ -400,9 +391,7 @@ class ChannelIdentityTests(unittest.TestCase):
 
         with self._temporary_transcript(channel_id="frozen-id"):
             card = bc.TRANSCRIPTS / "neon_psycho" / "frozen-id" / "1234567890123456789.md"
-            text = card.read_text(encoding="utf-8").replace(
-                "channel_id: frozen-id\n", "channel_id: tampered-id\n"
-            )
+            text = card.read_text(encoding="utf-8").replace("channel_id: frozen-id\n", "channel_id: tampered-id\n")
             card.write_text(text, encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "partition"):
                 bc.load_registry("neon_psycho", channel="@old_handle")

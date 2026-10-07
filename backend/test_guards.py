@@ -12,8 +12,8 @@ for k in ("R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"):
 pytest.importorskip("faster_whisper")
 pytest.importorskip("yt_dlp")
 
-from fastapi import HTTPException  # noqa: E402
-from main import _normalize_project, _validate_webhook_url  # noqa: E402
+from fastapi import HTTPException
+from main import _normalize_project, _validate_webhook_url
 
 
 def _fake_getaddrinfo(ips):

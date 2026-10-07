@@ -6,7 +6,6 @@ import hashlib
 import re
 from collections.abc import Mapping
 
-
 MEDIA_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 _ARTIFACT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")

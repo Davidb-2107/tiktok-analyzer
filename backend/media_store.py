@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from publication.media import MEDIA_EXTENSIONS, validate_artifact_id as _validate_artifact_id
-
+from publication.media import MEDIA_EXTENSIONS
+from publication.media import validate_artifact_id as _validate_artifact_id
 
 _IMAGE_EXTENSIONS = MEDIA_EXTENSIONS
 

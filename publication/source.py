@@ -2,14 +2,13 @@
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Mapping
 
 from publication.identity import validate_runtime_payload
 from publication.manifest import parse_manifest_bytes, verify_release
-
 
 _RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 

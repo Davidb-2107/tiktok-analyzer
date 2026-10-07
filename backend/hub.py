@@ -1,14 +1,15 @@
 """Explicit snapshot-backed Hub configuration and route registration."""
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
 from hub_read_model import project_runtime
 from media_store import MediaStore
+
 from publication.release_state import ReleaseStateError, read_release_state
 from publication.source import SnapshotSource, parse_source_context, resolve_source
 

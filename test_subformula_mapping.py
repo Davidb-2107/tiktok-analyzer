@@ -29,16 +29,12 @@ def _mapping_gate_config(env=None):
     regime = env.get("MAPPING_REGIME", "")
     source = env.get("MAPPING_SOURCE", "")
     if regime not in _MAPPING_GATE_REGIMES:
-        raise ValueError(
-            "mapping regime is required and must be synthetic or private"
-        )
+        raise ValueError("mapping regime is required and must be synthetic or private")
     if not source:
         raise ValueError("mapping source is required")
     if regime == "synthetic" and not source.startswith("local:"):
         raise ValueError("synthetic mapping source must be local:<path>")
-    if regime == "private" and not re.fullmatch(
-        r"release:sha256:[0-9a-f]{64}", source
-    ):
+    if regime == "private" and not re.fullmatch(r"release:sha256:[0-9a-f]{64}", source):
         raise ValueError("private mapping source must be release:<release_id>")
     return regime, source
 
@@ -48,30 +44,19 @@ def _resolve_release_source(source, release_root):
 
 
 def _snapshot_mapping_assignments(runtime):
-    handles = {
-        channel["channel_id"]: channel["current_handle"]
-        for channel in runtime["channels"]
-    }
+    handles = {channel["channel_id"]: channel["current_handle"] for channel in runtime["channels"]}
     assignments = {}
     for row in runtime["mappings"]:
         channel = handles[row["channel_id"]]
-        ids, statuses = assignments.setdefault(channel, {}).setdefault(
-            row["subformula_id"], (set(), set())
-        )
+        ids, statuses = assignments.setdefault(channel, {}).setdefault(row["subformula_id"], (set(), set()))
         ids.add(row["video_id"])
         statuses.add(row["status"])
     for channel, groups in assignments.items():
         for subformula_id, (_ids, statuses) in groups.items():
             if len(statuses) != 1:
-                raise ValueError(
-                    f"non-uniform mapping statuses for {channel}/{subformula_id}: "
-                    f"{statuses}"
-                )
+                raise ValueError(f"non-uniform mapping statuses for {channel}/{subformula_id}: {statuses}")
     return {
-        channel: {
-            subformula_id: (ids, statuses.pop())
-            for subformula_id, (ids, statuses) in groups.items()
-        }
+        channel: {subformula_id: (ids, statuses.pop()) for subformula_id, (ids, statuses) in groups.items()}
         for channel, groups in assignments.items()
     }
 
@@ -93,16 +78,7 @@ def _mapping(rows, *, niche="neon_psycho", heading=HEADING):
             style, realism, hook = "AI animation", 5, "question"
         else:
             video_id, channel, assignment, style, realism, hook = row
-        lines.append(
-            "| `{video_id}` | `{channel}` | {style} | {realism} | {hook} | angle | payoff | `{assignment}` |".format(
-                video_id=video_id,
-                channel=channel,
-                style=style,
-                realism=realism,
-                hook=hook,
-                assignment=assignment,
-            )
-        )
+        lines.append(f"| `{video_id}` | `{channel}` | {style} | {realism} | {hook} | angle | payoff | `{assignment}` |")
     return "\n".join(lines) + "\n"
 
 
@@ -134,15 +110,9 @@ class SubformulaMappingTests(unittest.TestCase):
 
             root = Path(tmp)
             payload = _source_payload()
-            manifest, _ = _write_snapshot(
-                root / "draft", payload, project_id="source_fixture"
-            )
+            manifest, _ = _write_snapshot(root / "draft", payload, project_id="source_fixture")
             release_root = root / "releases"
-            release_dir = (
-                release_root
-                / "sha256"
-                / manifest["release_id"].split(":", 1)[1]
-            )
+            release_dir = release_root / "sha256" / manifest["release_id"].split(":", 1)[1]
             _write_snapshot(release_dir, payload, project_id="source_fixture")
 
             source = f"release:{manifest['release_id']}"
@@ -192,9 +162,7 @@ class SubformulaMappingTests(unittest.TestCase):
             if mapping is not None:
                 mapping_path.write_text(mapping, encoding="utf-8")
             (formats / f"{formula_channel[1:]}.md").write_text(
-                formula
-                if formula is not None
-                else _formula(formula_channel, formula_ids, formula_ref),
+                formula if formula is not None else _formula(formula_channel, formula_ids, formula_ref),
                 encoding="utf-8",
             )
             old_formats, old_vault = bc.FORMATS, bc.sc.VAULT
@@ -218,18 +186,16 @@ class SubformulaMappingTests(unittest.TestCase):
             return bc.load_subformula_mapping(videos)
 
     def assert_load_error(self, rows, message, **kwargs):
-        with self.fixture(rows, **kwargs) as videos:
-            with self.assertRaisesRegex(ValueError, message):
-                bc.load_subformula_mapping(videos)
+        with self.fixture(rows, **kwargs) as videos, self.assertRaisesRegex(ValueError, message):
+            bc.load_subformula_mapping(videos)
 
     def route(self, rows, cluster, **kwargs):
         with self.fixture(rows, **kwargs) as videos:
             return bc.route_subformula(videos, cluster)
 
     def assert_route_error(self, rows, cluster, message, **kwargs):
-        with self.fixture(rows, **kwargs) as videos:
-            with self.assertRaisesRegex(ValueError, message):
-                bc.route_subformula(videos, cluster)
+        with self.fixture(rows, **kwargs) as videos, self.assertRaisesRegex(ValueError, message):
+            bc.route_subformula(videos, cluster)
 
     def test_valid_rows_are_channel_scoped_and_statuses_are_preserved(self):
         rows = [
@@ -337,13 +303,7 @@ class SubformulaMappingTests(unittest.TestCase):
         self.assertEqual(result[-1]["subformula_id"], "outlier_no_formula")
 
     def test_missing_mapping_reference_is_rejected(self):
-        formula = (
-            "---\n"
-            "channel: @alpha\n"
-            "channel_id: alpha\n"
-            "videos: 111111111111111111, 222222222222222222\n"
-            "---\n"
-        )
+        formula = "---\nchannel: @alpha\nchannel_id: alpha\nvideos: 111111111111111111, 222222222222222222\n---\n"
         self.assert_load_error([], "subformula_mapping_ref", formula=formula, mapping=None)
 
     def test_missing_mapping_file_is_rejected(self):
@@ -375,9 +335,11 @@ class SubformulaMappingTests(unittest.TestCase):
         )
 
     def test_malformed_row_is_rejected(self):
-        mapping = _mapping([
-            ("111111111111111111", "@alpha", "alpha_formula"),
-        ]).replace(
+        mapping = _mapping(
+            [
+                ("111111111111111111", "@alpha", "alpha_formula"),
+            ]
+        ).replace(
             "| `111111111111111111` | `@alpha` | AI animation | 5 | question | angle | payoff | `alpha_formula` |",
             "| `111111111111111111` | `@alpha` | AI animation | 5 | question | angle | payoff |",
         )
@@ -521,7 +483,8 @@ class SubformulaMappingTests(unittest.TestCase):
                 bc.route_subformula(videos[:1], "alpha_formula")
             with self.assertRaisesRegex(ValueError, "exactly one selected channel"):
                 bc.route_subformula(
-                    videos + [
+                    videos
+                    + [
                         {
                             "niche": "neon_psycho",
                             "channel": "@beta",
@@ -541,6 +504,7 @@ class SubformulaMappingTests(unittest.TestCase):
             [sys.executable, "brief_compiler.py", "neon_psycho", "--cluster", "alpha_formula"],
             capture_output=True,
             text=True,
+            check=False,
         )
         self.assertEqual(result.returncode, 1)
         self.assertIn("--cluster requires --channel", result.stdout)
@@ -569,8 +533,7 @@ class SubformulaMappingTests(unittest.TestCase):
             }
             self.assertTrue(
                 mapping_path.is_file(),
-                "mapping gate requires the selected mapping at "
-                f"{mapping_path}",
+                f"mapping gate requires the selected mapping at {mapping_path}",
             )
             for channel, assignments in expected.items():
                 videos = bc.load_registry("neon_psycho", channel=channel)
@@ -584,10 +547,7 @@ class SubformulaMappingTests(unittest.TestCase):
                     all(len(statuses) == 1 for _ids, statuses in actual.values()),
                     f"non-uniform mapping statuses: {actual}",
                 )
-                actual = {
-                    subformula_id: (ids, status.pop())
-                    for subformula_id, (ids, status) in actual.items()
-                }
+                actual = {subformula_id: (ids, status.pop()) for subformula_id, (ids, status) in actual.items()}
                 self.assertEqual(actual, assignments)
             return
 
@@ -612,9 +572,7 @@ class SubformulaMappingTests(unittest.TestCase):
             niche = "neon_psycho"
             expected = {
                 "@viraldtoprw": {
-                    "viraldtoprw_end_of_life_attachment": (
-                        {"7571154788486827295", "7568334048544820510"}, "assigned"
-                    ),
+                    "viraldtoprw_end_of_life_attachment": ({"7571154788486827295", "7568334048544820510"}, "assigned"),
                     "viraldtoprw_behavioral_attachment": (
                         {
                             "7572606346403564831",
@@ -625,9 +583,7 @@ class SubformulaMappingTests(unittest.TestCase):
                     ),
                 },
                 "@the.wisejourney": {
-                    "wise_provocative_relationship_claim": (
-                        {"7597962877495938326", "7604187243971939606"}, "assigned"
-                    ),
+                    "wise_provocative_relationship_claim": ({"7597962877495938326", "7604187243971939606"}, "assigned"),
                     "wise_pattern_interrupt_shock": (
                         {"7608722463937072407", "7629453809315499286"},
                         "analysis_group_only",
@@ -638,9 +594,7 @@ class SubformulaMappingTests(unittest.TestCase):
         self.assertEqual(_snapshot_mapping_assignments(snapshot.runtime), expected)
         for channel, assignments in expected.items():
             cluster = next(
-                subformula_id
-                for subformula_id, (_ids, status) in assignments.items()
-                if status == "assigned"
+                subformula_id for subformula_id, (_ids, status) in assignments.items() if status == "assigned"
             )
             brief = bc.compile_brief(
                 niche,

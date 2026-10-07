@@ -1,4 +1,10 @@
 temp/
+# Test/scratch artifacts: .pytest-tmp holds disposable repo copies (with
+# deliberately broken fixtures); .scratch holds WIP. Both must stay out of
+# git AND out of ruff (respect_gitignore) — otherwise their planted errors
+# pollute `ruff check` counts.
+.pytest-tmp/
+.scratch/
 hf_cache/
 __pycache__/
 *.pyc

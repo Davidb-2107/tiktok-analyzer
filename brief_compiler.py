@@ -21,7 +21,6 @@ Self-check : python test_brief_compiler.py
 import argparse
 import importlib.util
 import json
-import math
 import re
 import sys
 import unicodedata
@@ -47,13 +46,10 @@ FCR_MODULE = None
 
 def _load_fcr_module(module_path):
     """Load the configured FORMAT CARD registry without changing sys.path."""
-    spec = importlib.util.spec_from_file_location(
-        "_vault_format_card_registry", module_path
-    )
+    spec = importlib.util.spec_from_file_location("_vault_format_card_registry", module_path)
     if spec is None or spec.loader is None:
         raise ImportError(
-            "Impossible de construire le chargeur du validateur FORMAT CARD. "
-            f"Chemin attendu : {module_path}"
+            f"Impossible de construire le chargeur du validateur FORMAT CARD. Chemin attendu : {module_path}"
         )
     module = importlib.util.module_from_spec(spec)
     try:
@@ -149,8 +145,7 @@ def load_registry(niche, channel=None):
             )
         if f.parent.name != channel_id:
             raise ValueError(
-                f"[{niche}] channel_id/partition incohérents: {f} "
-                f"(déclaré {channel_id!r}, partition {f.parent.name!r})"
+                f"[{niche}] channel_id/partition incohérents: {f} (déclaré {channel_id!r}, partition {f.parent.name!r})"
             )
         m = re.search(r"## Transcript.*?\n\n(.+?)(?:\n\n## |\Z)", body, re.DOTALL)
         videos.append(
@@ -184,9 +179,7 @@ def load_registry(niche, channel=None):
         videos = [v for v in videos if v["channel"] == channel]
         if not videos:
             available = ", ".join(channels) or "aucune"
-            raise ValueError(
-                f"[{niche}] chaîne introuvable: {channel}; disponibles: {available}"
-            )
+            raise ValueError(f"[{niche}] chaîne introuvable: {channel}; disponibles: {available}")
     assert videos, f"registre vide: {d}"
     return videos
 
@@ -196,9 +189,7 @@ def find_formula(videos):
     channel_ids = {v.get("channel_id") for v in videos}
     channel_id = next(iter(channel_ids), None)
     if len(channel_ids) != 1 or not isinstance(channel_id, str) or not channel_id:
-        raise ValueError(
-            "sélection multi-chaînes ou channel_id manquant: utilisez --channel"
-        )
+        raise ValueError("sélection multi-chaînes ou channel_id manquant: utilisez --channel")
     ids = {v["video_id"] for v in videos}
     candidates = []
     partial = []
@@ -206,13 +197,10 @@ def find_formula(videos):
         text = f.read_text(encoding="utf-8")
         formula_channel_id = parse_frontmatter(text)[0].get("channel_id")
         if not isinstance(formula_channel_id, str) or not formula_channel_id:
-            raise ValueError(
-                f"[{videos[0]['niche']}] channel_id formula non canonique: {f}"
-            )
+            raise ValueError(f"[{videos[0]['niche']}] channel_id formula non canonique: {f}")
         if f.stem != formula_channel_id:
             raise ValueError(
-                f"[{videos[0]['niche']}] channel_id/fichier formula incohérents: {f} "
-                f"(déclaré: {formula_channel_id}.md)"
+                f"[{videos[0]['niche']}] channel_id/fichier formula incohérents: {f} (déclaré: {formula_channel_id}.md)"
             )
         if formula_channel_id != channel_id:
             continue
@@ -252,8 +240,7 @@ def _mapping_row(line, line_number, mapping_path):
     stripped = line.strip()
     if not (stripped.startswith("|") and stripped.endswith("|")):
         raise ValueError(
-            f"mapping row malformed in {mapping_path}:{line_number}: "
-            "expected a pipe-delimited Markdown row"
+            f"mapping row malformed in {mapping_path}:{line_number}: expected a pipe-delimited Markdown row"
         )
     cells = [cell.strip() for cell in stripped[1:-1].split("|")]
     if len(cells) != len(SUBFORMULA_MAPPING_COLUMNS):
@@ -262,9 +249,7 @@ def _mapping_row(line, line_number, mapping_path):
             f"expected {len(SUBFORMULA_MAPPING_COLUMNS)} cells, got {len(cells)}"
         )
     if any(not cell for cell in cells):
-        raise ValueError(
-            f"mapping row malformed in {mapping_path}:{line_number}: empty cell"
-        )
+        raise ValueError(f"mapping row malformed in {mapping_path}:{line_number}: empty cell")
     return cells
 
 
@@ -298,9 +283,7 @@ def _read_subformula_table(text, mapping_path):
             if tuple(_mapping_value(cell) for cell in cells) == SUBFORMULA_MAPPING_COLUMNS:
                 header_indexes.append(index)
     if len(header_indexes) != 1:
-        raise ValueError(
-            f"approved subformula mapping table missing or duplicated in {mapping_path}"
-        )
+        raise ValueError(f"approved subformula mapping table missing or duplicated in {mapping_path}")
 
     header_index = header_indexes[0]
     separator_index = header_index + 1
@@ -335,16 +318,12 @@ def _subformula_assignment(value, mapping_path, line_number):
     assignment = _mapping_value(raw_value)
     if assignment in SUBFORMULA_ASSIGNMENTS:
         if analysis_group_only:
-            raise ValueError(
-                f"unknown assignment status in {mapping_path}:{line_number}: {value!r}"
-            )
+            raise ValueError(f"unknown assignment status in {mapping_path}:{line_number}: {value!r}")
         return assignment, "outlier"
     if assignment == "analysis_group_only":
         return assignment, "analysis_group_only"
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9_]*[a-z0-9])?", assignment):
-        raise ValueError(
-            f"unknown assignment status in {mapping_path}:{line_number}: {value!r}"
-        )
+        raise ValueError(f"unknown assignment status in {mapping_path}:{line_number}: {value!r}")
     return assignment, "analysis_group_only" if analysis_group_only else "assigned"
 
 
@@ -359,9 +338,7 @@ def _mapping_path(ref):
     try:
         path.relative_to(vault)
     except ValueError as exc:
-        raise ValueError(
-            f"subformula_mapping_ref escapes configured Vault: {ref!r}"
-        ) from exc
+        raise ValueError(f"subformula_mapping_ref escapes configured Vault: {ref!r}") from exc
     if not path.is_file():
         raise ValueError(f"subformula mapping file missing: {path}")
     return path
@@ -388,9 +365,7 @@ def load_subformula_mapping(videos):
 
     formula_path, formula_text = find_formula(videos)
     if formula_path is None:
-        raise ValueError(
-            f"[{niche}] CHANNEL FORMULA introuvable for selected channel {channel}"
-        )
+        raise ValueError(f"[{niche}] CHANNEL FORMULA introuvable for selected channel {channel}")
     formula_meta, _ = parse_frontmatter(formula_text)
     mapping_path = _mapping_path(formula_meta.get("subformula_mapping_ref"))
     mapping_text = mapping_path.read_text(encoding="utf-8")
@@ -407,9 +382,7 @@ def load_subformula_mapping(videos):
     for index, cells in enumerate(rows, 1):
         video_id = _mapping_value(cells[0])
         if not re.fullmatch(r"\d{18,20}", video_id):
-            raise ValueError(
-                f"mapping row malformed in {mapping_path}: invalid video ID {video_id!r}"
-            )
+            raise ValueError(f"mapping row malformed in {mapping_path}: invalid video ID {video_id!r}")
         row_channel = _mapping_value(cells[1])
         _channel_slug(row_channel)
         assignment, status = _subformula_assignment(cells[7], mapping_path, index)
@@ -438,40 +411,25 @@ def load_subformula_mapping(videos):
     selected_ids = {record["video_id"] for record in selected}
     expected_set = set(expected_ids)
     foreign_selected = [
-        video_id
-        for video_id in expected_set
-        if video_id in seen_ids and seen_ids[video_id]["channel"] != channel
+        video_id for video_id in expected_set if video_id in seen_ids and seen_ids[video_id]["channel"] != channel
     ]
     if foreign_selected:
         raise ValueError(
-            f"cross-channel mapping rows for selected channel {channel}: "
-            + ", ".join(sorted(foreign_selected))
+            f"cross-channel mapping rows for selected channel {channel}: " + ", ".join(sorted(foreign_selected))
         )
     missing = expected_set - selected_ids
     extra = selected_ids - expected_set
     if missing:
-        raise ValueError(
-            f"missing mapping rows for {niche}/{channel}: {', '.join(sorted(missing))}"
-        )
+        raise ValueError(f"missing mapping rows for {niche}/{channel}: {', '.join(sorted(missing))}")
     if extra:
-        raise ValueError(
-            f"unexpected mapping rows for {niche}/{channel}: {', '.join(sorted(extra))}"
-        )
+        raise ValueError(f"unexpected mapping rows for {niche}/{channel}: {', '.join(sorted(extra))}")
 
     counts = Counter(
-        (record["channel"], record["subformula_id"])
-        for record in records
-        if record["status"] != "outlier"
+        (record["channel"], record["subformula_id"]) for record in records if record["status"] != "outlier"
     )
-    undersized = [
-        f"{group[0]}:{group[1]} ({count} video)"
-        for group, count in counts.items()
-        if count < 2
-    ]
+    undersized = [f"{group[0]}:{group[1]} ({count} video)" for group, count in counts.items() if count < 2]
     if undersized:
-        raise ValueError(
-            f"subformula mapping groups require at least two videos: {', '.join(undersized)}"
-        )
+        raise ValueError(f"subformula mapping groups require at least two videos: {', '.join(undersized)}")
     return selected
 
 
@@ -497,11 +455,7 @@ def _slug(s):
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
     s = re.split(r"[:(—-]| - ", s, 1)[0]  # coupe à ':', '(', tiret long
     words = re.findall(r"[a-z0-9]+", s.lower())
-    return "_".join(
-        w
-        for w in words
-        if w not in ("l", "le", "la", "les", "d", "de", "du", "un", "une")
-    )[:40]
+    return "_".join(w for w in words if w not in ("l", "le", "la", "les", "d", "de", "du", "un", "une"))[:40]
 
 
 def _section(text, title):
@@ -596,14 +550,9 @@ def inspect_cards(videos):
     for v in videos:
         vid = v.get("video_id", v.get("ref", "?"))
         inspected = _inspect_one(v)
-        if (
-            inspected["n_sections"] == 0
-            and inspected.get("format_card_status") == "blocked_source_unavailable"
-        ):
+        if inspected["n_sections"] == 0 and inspected.get("format_card_status") == "blocked_source_unavailable":
             n_blocked += 1
-            blocked.append(
-                {"video_id": vid, "status": "blocked_source_unavailable"}
-            )
+            blocked.append({"video_id": vid, "status": "blocked_source_unavailable"})
             continue
         if inspected["n_sections"] == 0:
             errors.append({"video_id": vid, "error": "missing FORMAT CARD"})
@@ -724,12 +673,7 @@ def load_voice(niche, alias, language):
     data = json.loads((VOICE_CAL / "voice_wpm.json").read_text(encoding="utf-8"))
     if not alias:
         key = re.sub(r"[^a-z0-9]", "", niche.lower())
-        cands = [
-            k
-            for k in data
-            if not k.startswith("_")
-            and re.sub(r"[^a-z0-9]", "", k.lower()).startswith(key)
-        ]
+        cands = [k for k in data if not k.startswith("_") and re.sub(r"[^a-z0-9]", "", k.lower()).startswith(key)]
         if not cands:
             return (
                 "TODO(calibrate-voice)",
@@ -737,9 +681,7 @@ def load_voice(niche, alias, language):
                 f"TODO: aucun profil voix pour la niche '{niche}' — lancer calibrate-voice (valeur _default non calibrée)",
             )
         # ponytail: défaut = alias le plus utilisé en prod (runs), tiebreak nom court
-        alias = max(
-            cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k))
-        )
+        alias = max(cands, key=lambda k: (len(data[k].get("observed_runs", [])), -len(k)))
 
     wpm, label = voice_wpm.get_wpm(alias, language=language, postproc="cut")
     profile = voice_wpm.get_profile(alias, language=language) or {}
@@ -754,14 +696,10 @@ def engine_provenance(niche):
     le brief sort alors avec des entrées TODO(engine-facts)."""
     text = ENGINE_FACTS.read_text(encoding="utf-8")
     lines = [ln.strip("- ").strip() for ln in text.splitlines()]
-    default = next(
-        (ln for ln in lines if re.search(rf"défaut {niche}", ln, re.IGNORECASE)), None
-    )
+    default = next((ln for ln in lines if re.search(rf"défaut {niche}", ln, re.IGNORECASE)), None)
     if not default:
         return None
-    hero = next(
-        (ln for ln in lines if re.search(r"hero shots", ln, re.IGNORECASE)), default
-    )
+    hero = next((ln for ln in lines if re.search(r"hero shots", ln, re.IGNORECASE)), default)
     fmt = lambda ln: f"ENGINE-FACTS (Shared/ENGINE-FACTS.md): {ln[:160]}"
     return fmt(default), fmt(hero)
 
@@ -772,7 +710,7 @@ def build_beats(target_s, wpm, hook_template, constant):
     ponytail: split fixe hook 3s / setup 25% / payoff reste (+ cta 2.5s si le
     format en a un en constant) — affiner par niche quand un vrai pattern émerge."""
     total = round(sum(target_s) / 2, 1)
-    words = lambda d: int(round(wpm * d / 60))
+    words = lambda d: round(wpm * d / 60)
     has_cta = any("cta" in k for k in constant)
     cta_d = 2.5 if has_cta else 0.0
     body_end = total - cta_d
@@ -884,10 +822,7 @@ def _compile_snapshot_brief(
         release_root=release_root,
     )
     if source.manifest["project_id"] != niche:
-        raise ValueError(
-            f"source project_id mismatch: expected {niche!r}, "
-            f"got {source.manifest['project_id']!r}"
-        )
+        raise ValueError(f"source project_id mismatch: expected {niche!r}, got {source.manifest['project_id']!r}")
     runtime = source.runtime
     channels = runtime["channels"]
     available_channels = sorted(item["current_handle"] for item in channels)
@@ -928,8 +863,7 @@ def _compile_snapshot_brief(
     formulas = [
         item
         for item in runtime["formulas"]
-        if item.get("channel_id") == channel_id
-        and (cluster is None or item.get("subformula_id") == cluster)
+        if item.get("channel_id") == channel_id and (cluster is None or item.get("subformula_id") == cluster)
     ]
     if len(formulas) != 1:
         raise ValueError("source must resolve exactly one formula for the selected channel")
@@ -983,8 +917,7 @@ def _compile_snapshot_brief(
         "source": {
             "channel": channel,
             "videos": [
-                {key: video[key] for key in ("url", "video_id", "channel", "title", "views")}
-                for video in videos
+                {key: video[key] for key in ("url", "video_id", "channel", "title", "views")} for video in videos
             ],
             "format_card_ref": videos[0]["ref"].rsplit("/", 1)[0] + "/",
             "channel_formula_ref": formula_ref,
@@ -1044,24 +977,14 @@ def _reject_absolute_paths(value, path="brief"):
 
 def _enforce_strict_cards(niche, videos, card_report):
     """Raise when coverage, validity, or majority violates strict mode."""
-    ref_by_id = {
-        v["video_id"]: v.get("ref", v["video_id"])
-        for v in videos
-    }
-    problems = [
-        f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}"
-        for e in card_report["errors"]
-    ]
+    ref_by_id = {v["video_id"]: v.get("ref", v["video_id"]) for v in videos}
+    problems = [f"{ref_by_id.get(e['video_id'], e['video_id'])}: {e['error']}" for e in card_report["errors"]]
     problems.extend(
         f"{ref_by_id.get(entry['video_id'], entry['video_id'])}: {entry['status']}"
         for entry in card_report.get("blocked", [])
     )
     if card_report["n_valid"] > 0:
-        low = [
-            field
-            for field, share in card_report["majority_share"].items()
-            if share < 2 / 3
-        ]
+        low = [field for field, share in card_report["majority_share"].items() if share < 2 / 3]
         if low:
             problems.append(f"majorité < 2/3 pour: {', '.join(low)}")
     if problems:
@@ -1071,9 +994,7 @@ def _enforce_strict_cards(niche, videos, card_report):
         )
 
 
-def _compile_brief_full(
-    niche, voice=None, language="fr", strict=False, channel=None, cluster=None
-):
+def _compile_brief_full(niche, voice=None, language="fr", strict=False, channel=None, cluster=None):
     """Builder-only legacy Vault path; runtime callers must use snapshots."""
     if cluster is not None and not channel:
         raise ValueError("--cluster requires --channel")
@@ -1082,13 +1003,9 @@ def _compile_brief_full(
     if cluster is not None:
         videos = route_subformula(videos, cluster)
     formula_path, formula_text = find_formula(videos)
-    assert formula_text, (
-        f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
-    )
+    assert formula_text, f"CHANNEL FORMULA introuvable dans {FORMATS} pour la niche {niche}"
 
-    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(
-        formula_text
-    )
+    style, realism, hook_mechanic, hook_template, constant, slots = derive_format(formula_text)
     # les cards taxonomiques archivées priment sur l'inférence mots-clés, mais
     # SEULEMENT quand la couverture est complète (règle du plan) — une card
     # partielle/invalide/dupliquée n'active jamais la voie noble.
@@ -1097,10 +1014,7 @@ def _compile_brief_full(
     if from_cards:
         style, realism, hook_mechanic = from_cards
     else:
-        print(
-            f"[{niche}] {card_report['n_valid']}/{card_report['n_videos']} "
-            "cards — fallback keywords"
-        )
+        print(f"[{niche}] {card_report['n_valid']}/{card_report['n_videos']} cards — fallback keywords")
 
     if strict:
         _enforce_strict_cards(niche, videos, card_report)
@@ -1163,14 +1077,9 @@ def _compile_brief_full(
         "niche": niche,
         "source": {
             "channel": videos[0]["channel"],
-            "videos": [
-                {k: v[k] for k in ("url", "video_id", "channel", "title", "views")}
-                for v in videos
-            ],
+            "videos": [{k: v[k] for k in ("url", "video_id", "channel", "title", "views")} for v in videos],
             "format_card_ref": videos[0]["ref"].rsplit("/", 1)[0] + "/",
-            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT or VAULT)).replace(
-                "\\", "/"
-            ),
+            "channel_formula_ref": str(formula_path.relative_to(sc.VAULT or VAULT)).replace("\\", "/"),
         },
         "format": {
             "style": style,
@@ -1220,9 +1129,7 @@ def readiness(brief, format_report=None):
     des erreurs ordinaires de couverture."""
     warn = []
     if str(brief["script"]["voice_id"]).startswith("TODO"):
-        warn.append(
-            "voix NON calibrée (budget mots sur wpm _default) -> calibrate-voice"
-        )
+        warn.append("voix NON calibrée (budget mots sur wpm _default) -> calibrate-voice")
     if any(str(p["engine"]).startswith("TODO") for p in brief["prompt_pack"]):
         warn.append("aucun verdict moteur dans ENGINE-FACTS -> gate pilote avant prod")
     if brief["format"]["style"] == "other":
@@ -1231,9 +1138,7 @@ def readiness(brief, format_report=None):
         warn.append("hook_mechanic='other' : mécanique de hook non résolue")
     if format_report:
         if format_report.get("n_blocked", 0):
-            statuses = sorted(
-                {entry["status"] for entry in format_report.get("blocked", [])}
-            )
+            statuses = sorted({entry["status"] for entry in format_report.get("blocked", [])})
             warn.append("couverture FORMAT CARD bloquée: " + ", ".join(statuses))
         if format_report["n_valid"] != format_report["n_videos"]:
             warn.append(
@@ -1242,11 +1147,7 @@ def readiness(brief, format_report=None):
                 "les vidéos manquantes/invalides"
             )
         elif format_report["n_valid"] > 0:
-            low = [
-                field
-                for field, share in format_report["majority_share"].items()
-                if share < 2 / 3
-            ]
+            low = [field for field, share in format_report["majority_share"].items() if share < 2 / 3]
             if low:
                 warn.append(
                     "majorité FORMAT CARD sous le seuil 2/3 pour: "

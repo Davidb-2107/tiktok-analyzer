@@ -1,11 +1,11 @@
 """Source-context contract tests.  Run: python test_source_context.py."""
 
-import json
 import hashlib
 import tempfile
 import unittest
 from pathlib import Path
 
+import brief_compiler as bc
 from publication.manifest import (
     canonical_json_bytes,
     canonical_payload_bytes,
@@ -13,7 +13,6 @@ from publication.manifest import (
     release_id_for,
 )
 from publication.source import parse_source_context, resolve_source
-import brief_compiler as bc
 
 
 def _payload():
@@ -86,9 +85,8 @@ class SourceContextTests(unittest.TestCase):
             "sha256:" + "a" * 64,
         )
         for context in (None, "", "draft", "local:", "local:   ", "remote:x", "release:not-an-id"):
-            with self.subTest(context=context):
-                with self.assertRaisesRegex(ValueError, "source context"):
-                    parse_source_context(context)
+            with self.subTest(context=context), self.assertRaisesRegex(ValueError, "source context"):
+                parse_source_context(context)
 
     def test_local_and_release_read_the_same_canonical_payload_bytes(self):
         # Break caught: adapters parsing/reserializing differently or release lookup using another snapshot.
@@ -119,9 +117,8 @@ class SourceContextTests(unittest.TestCase):
             root = Path(temp)
             manifest, _ = _write_snapshot(root / "draft")
             for context in (None, "", "draft", "local:", "release:not-an-id"):
-                with self.subTest(context=context):
-                    with self.assertRaises(ValueError):
-                        resolve_source(parse_source_context(context))
+                with self.subTest(context=context), self.assertRaises(ValueError):
+                    resolve_source(parse_source_context(context))
             with self.assertRaisesRegex(ValueError, "release_root"):
                 resolve_source(parse_source_context(f"release:{manifest['release_id']}"))
             (root / "draft" / "payload.json").write_bytes(b'{ "runtime": {}}')

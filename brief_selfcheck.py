@@ -11,8 +11,8 @@ ponytail: valide le contrat, pas chaque champ. Le vrai risque = un brief qui
 diverge du SOT — c'est ce qui est asserté ici.
 """
 
-import json
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path

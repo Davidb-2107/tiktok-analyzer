@@ -1,0 +1,23 @@
+# Garde-fou déterministe avant l'historique — complète les hooks Claude
+# (qui ne couvrent que les sessions, et dont lint-py est opt-in + non bloquant).
+# MAJ des revs : pre-commit autoupdate   (vérifié 2026-10-06)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace      # supprime les espaces en fin de ligne
+      - id: end-of-file-fixer        # chaque fichier finit par une ligne vide
+      - id: check-yaml               # syntaxe YAML
+      - id: check-json               # syntaxe JSON (doublons clés aussi)
+      - id: check-added-large-files  # pas de fichier lourd accidentel
+      - id: detect-private-key       # bloque les clés privées commitées
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
+    hooks:
+      - id: ruff-check               # GARDE non mutant — pas de --fix
+      # L'autorité formatage = lint-py (PostToolUse, session Claude).
+      # ruff-format ou --fix ici = 2 autorités de format avec 2 versions
+      # de ruff → ping-pong de reformats entre le hook et la session.
+      # NB: lint-py est opt-in — le repo doit porter un ruff.toml
+      #     pour être formaté des deux côtés.

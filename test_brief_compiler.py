@@ -31,6 +31,7 @@ def main():
     path_before = tuple(sys.path)
     global bc
     import brief_compiler as bc
+
     if os.environ.get("VAULT_DIR"):
         bc.configure_builder_vault(os.environ["VAULT_DIR"])
 
@@ -93,8 +94,7 @@ def main():
         for f in registry_dir.rglob("*.md")
         if (
             "video_url" in bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0]
-            and bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0].get("channel")
-            == channel
+            and bc.parse_frontmatter(f.read_text(encoding="utf-8"))[0].get("channel") == channel
         )
     )
     videos = brief["source"]["videos"]
@@ -135,13 +135,10 @@ def main():
     assert target_s[0] <= total <= target_s[1], f"durée beats {total}s hors fenêtre"
     assert beats[0]["role"] == "hook" and beats[0]["t_end"] <= 3.0
     assert brief["script"]["target_wpm"] > 0
-    assert (
-        "voice_wpm" in brief["script"]["wpm_source"]
-        or "calibr" in brief["script"]["wpm_source"]
-    ), "wpm_source ne cite pas le profil calibré"
-    assert brief["script"]["voice_id"] != "TODO", (
-        "profil voix existe, pas de TODO attendu"
+    assert "voice_wpm" in brief["script"]["wpm_source"] or "calibr" in brief["script"]["wpm_source"], (
+        "wpm_source ne cite pas le profil calibré"
     )
+    assert brief["script"]["voice_id"] != "TODO", "profil voix existe, pas de TODO attendu"
 
     # Chaque beat porte un budget mots cohérent avec le WPM (dans le texte template).
     assert all("mots" in b["text"] for b in beats if b["role"] != "cta") or True
@@ -189,9 +186,7 @@ def main():
     # --- readiness : signaux séparés voix/moteur/taxonomie vs couverture cards
     _test_readiness(brief, card_report)
 
-    print(
-        "OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix."
-    )
+    print("OK — brief_compiler : brief neon_psycho valide, couplé SOT + ENGINE-FACTS + profil voix.")
     print(
         f"  beats: {len(beats)} ({total}s)  shots: {len(brief['shots'])}  "
         f"wpm: {brief['script']['target_wpm']} ({brief['script']['voice_id']})"
@@ -286,9 +281,7 @@ def _test_explicit_source_contexts():
         payload = _source_payload()
         manifest, _ = _write_snapshot(root / "draft", payload, project_id="source_fixture")
         release_dir = root / "releases" / "sha256" / manifest["release_id"].split(":", 1)[1]
-        release_manifest, _ = _write_snapshot(
-            release_dir, payload, project_id="source_fixture"
-        )
+        release_manifest, _ = _write_snapshot(release_dir, payload, project_id="source_fixture")
         for field in ("vault_commit", "builder_version"):
             assert manifest["provenance"][field] == release_manifest["provenance"][field]
 
@@ -328,9 +321,7 @@ def _test_explicit_source_contexts():
         assert sc.load_sot(f"local:{root / 'draft'}") == ([62.0, 75.0], [1.5, 4.0])
         sc.main(f"local:{root / 'draft'}")
 
-        encode = lambda value: json.dumps(value, ensure_ascii=False, indent=2).encode(
-            "utf-8"
-        )
+        encode = lambda value: json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
         local_bytes = encode(local)
         assert local_bytes == encode(local_after_poison)
         assert local_bytes == encode(release)
@@ -388,12 +379,15 @@ def _test_channel_formula_routing(channel):
     ) == ("POV skit", "question", 2), brief_b["format"]
     assert brief_ci["format"]["constant"]["camera"] == "virtual AI close-up"
     assert brief_b["format"]["constant"]["camera"] == "handheld POV reaction"
-    assert all("ci/vault" not in ref for ref in (
-        brief_ci["source"]["format_card_ref"],
-        brief_ci["source"]["channel_formula_ref"],
-        brief_b["source"]["format_card_ref"],
-        brief_b["source"]["channel_formula_ref"],
-    ))
+    assert all(
+        "ci/vault" not in ref
+        for ref in (
+            brief_ci["source"]["format_card_ref"],
+            brief_ci["source"]["channel_formula_ref"],
+            brief_b["source"]["format_card_ref"],
+            brief_b["source"]["channel_formula_ref"],
+        )
+    )
 
 
 def _write_channel_fixture(vault, niche, channel, video_ids, style, realism, hook):
@@ -498,9 +492,7 @@ def _test_arbitrary_channel_routing():
     with _temporary_channel_vault() as vault:
         formulas = {}
         for channel, video_id, style, realism, hook in channels:
-            formulas[channel] = _write_channel_fixture(
-                vault, niche, channel, [video_id], style, realism, hook
-            )
+            formulas[channel] = _write_channel_fixture(vault, niche, channel, [video_id], style, realism, hook)
 
         for channel, _, _, _, _ in channels:
             registry = bc.load_registry(niche, channel=channel)
@@ -517,25 +509,23 @@ def _test_arbitrary_channel_routing():
         else:
             raise AssertionError("un registre multi-chaînes doit exiger --channel")
         _expect_value_error(lambda: bc._compile_brief_full(niche), "utilisez --channel")
-        _expect_value_error(
-            lambda: bc.load_registry(niche, channel="@Alpha"), "non canonique"
-        )
-        _expect_value_error(
-            lambda: bc.load_registry(niche, channel="alpha"), "non canonique"
-        )
-        _expect_value_error(
-            lambda: bc.load_registry(niche, channel="@unknown"), "chaîne introuvable"
-        )
+        _expect_value_error(lambda: bc.load_registry(niche, channel="@Alpha"), "non canonique")
+        _expect_value_error(lambda: bc.load_registry(niche, channel="alpha"), "non canonique")
+        _expect_value_error(lambda: bc.load_registry(niche, channel="@unknown"), "chaîne introuvable")
 
         alpha = _builder_brief(niche, channel="@alpha")
         beta = _builder_brief(niche, channel="@beta")
         assert alpha["source"]["channel"] == "@alpha"
         assert beta["source"]["channel"] == "@beta"
         assert (alpha["format"]["style"], alpha["format"]["realism"], alpha["format"]["hook_mechanic"]) == (
-            "AI animation", 5, "text-tease"
+            "AI animation",
+            5,
+            "text-tease",
         )
         assert (beta["format"]["style"], beta["format"]["realism"], beta["format"]["hook_mechanic"]) == (
-            "POV skit", 2, "question"
+            "POV skit",
+            2,
+            "question",
         )
         for brief, channel in ((alpha, "@alpha"), (beta, "@beta")):
             slug = channel[1:]
@@ -543,17 +533,13 @@ def _test_arbitrary_channel_routing():
             assert brief["source"]["channel_formula_ref"].endswith(f"/{slug}.md")
             assert all(f"/{slug}/" in v["ref"] for v in bc.load_registry(niche, channel=channel))
 
-        mismatched_card = (
-            vault / "Projects" / "Sourcing" / "transcripts" / niche / "wrong" / "555555555555555555.md"
-        )
+        mismatched_card = vault / "Projects" / "Sourcing" / "transcripts" / niche / "wrong" / "555555555555555555.md"
         mismatched_card.parent.mkdir()
         mismatched_card.write_text(
-            "---\nvideo_url: https://www.tiktok.com/@alpha/video/555555555555555555\n"
-            'channel: "@alpha"\n---\n', encoding="utf-8"
+            '---\nvideo_url: https://www.tiktok.com/@alpha/video/555555555555555555\nchannel: "@alpha"\n---\n',
+            encoding="utf-8",
         )
-        _expect_value_error(
-            lambda: bc.load_registry(niche, channel="@alpha"), "channel_id"
-        )
+        _expect_value_error(lambda: bc.load_registry(niche, channel="@alpha"), "channel_id")
         mismatched_card.unlink()
 
         missing_channel_card = (
@@ -563,17 +549,11 @@ def _test_arbitrary_channel_routing():
             "---\nvideo_url: https://www.tiktok.com/@alpha/video/666666666666666666\n---\n",
             encoding="utf-8",
         )
-        _expect_value_error(
-            lambda: bc.load_registry(niche, channel="@alpha"), "non canonique"
-        )
+        _expect_value_error(lambda: bc.load_registry(niche, channel="@alpha"), "non canonique")
         missing_channel_card.unlink()
 
-        missing_channel_formula = (
-            vault / "Projects" / "Sourcing" / "formats" / niche / "missing.md"
-        )
-        missing_channel_formula.write_text(
-            "---\nvideos: 111111111111111111\n---\n", encoding="utf-8"
-        )
+        missing_channel_formula = vault / "Projects" / "Sourcing" / "formats" / niche / "missing.md"
+        missing_channel_formula.write_text("---\nvideos: 111111111111111111\n---\n", encoding="utf-8")
         _expect_value_error(
             lambda: bc.find_formula(bc.load_registry(niche, channel="@alpha")),
             "non canonique",
@@ -581,9 +561,7 @@ def _test_arbitrary_channel_routing():
         missing_channel_formula.unlink()
 
         formulas["@alpha"].write_text(
-            formulas["@alpha"].read_text(encoding="utf-8").replace(
-                "channel_id: alpha", "channel_id: beta"
-            ),
+            formulas["@alpha"].read_text(encoding="utf-8").replace("channel_id: alpha", "channel_id: beta"),
             encoding="utf-8",
         )
         _expect_value_error(
@@ -670,6 +648,7 @@ def _test_cp1252_warning():
             ],
             env=env,
             capture_output=True,
+            check=False,
         )
     assert result.returncode == 0, result.stderr.decode("ascii", errors="replace")
     assert b"niche pas encore" in result.stdout
@@ -714,9 +693,7 @@ def _test_cards_fixtures():
     )
     assert missing_report["n_blocked"] == 0
     assert missing_report["blocked"] == []
-    assert missing_report["errors"] == [
-        {"video_id": "missing-no-status", "error": "missing FORMAT CARD"}
-    ]
+    assert missing_report["errors"] == [{"video_id": "missing-no-status", "error": "missing FORMAT CARD"}]
 
     # Un statut source bloqué ne doit pas masquer une inspection déjà valide.
     valid_blocked_report = bc.inspect_cards(
@@ -757,9 +734,7 @@ def _test_cards_fixtures():
         [
             {
                 "video_id": "canonical-values",
-                "card": _card(
-                    style="POV skit", realism="4", hook="direct address"
-                ),
+                "card": _card(style="POV skit", realism="4", hook="direct address"),
             }
         ]
     )
@@ -799,9 +774,7 @@ def _test_cards_fixtures():
     for label, card in duplicate_cases:
         duplicate = bc.inspect_cards([{"video_id": label, "card": card}])
         assert duplicate["n_valid"] == 0
-        assert duplicate["errors"] == [
-            {"video_id": label, "error": f"duplicate field: {label}"}
-        ]
+        assert duplicate["errors"] == [{"video_id": label, "error": f"duplicate field: {label}"}]
 
     # Niche partielle : au moins une vidéo sans card -> parse_cards -> None.
     partial_missing = [
@@ -859,9 +832,7 @@ def _test_cards_fixtures():
     boundary_report = bc.inspect_cards(heterogeneous_boundary)
     assert boundary_report["n_present"] == 3
     assert boundary_report["n_valid"] == boundary_report["n_videos"] == 3
-    assert all(
-        share == 2 / 3 for share in boundary_report["majority_share"].values()
-    )
+    assert all(share == 2 / 3 for share in boundary_report["majority_share"].values())
     assert bc.parse_cards(heterogeneous_boundary, report=boundary_report) == (
         "AI animation",
         5,
@@ -878,15 +849,11 @@ def _test_cards_fixtures():
     boundary_warnings = bc.readiness(readiness_probe, boundary_report)
     assert not any("majorité FORMAT CARD" in warning for warning in boundary_warnings)
     blocked_warnings = bc.readiness(readiness_probe, blocked_report)
-    assert any(
-        "blocked_source_unavailable" in warning for warning in blocked_warnings
-    )
+    assert any("blocked_source_unavailable" in warning for warning in blocked_warnings)
 
     # Card invalide (valeur de champ inconnue) : comptée comme invalide par
     # inspect_cards, jamais silencieusement classée "other".
-    report = bc.inspect_cards(
-        [{"video_id": "bad", "card": _card(style="made up value")}]
-    )
+    report = bc.inspect_cards([{"video_id": "bad", "card": _card(style="made up value")}])
     assert report["n_present"] == 1, "la section existe, elle n'est pas 'missing'"
     assert report["n_valid"] == 0
     assert len(report["errors"]) == 1
@@ -915,12 +882,8 @@ def _test_cards_fixtures():
     # Piège de sous-chaîne : "not a talking head" ne doit jamais matcher
     # "talking head" (même garantie que Task 1, revérifiée côté brief_compiler
     # puisqu'il consomme fcr.parse_card via inspect_cards).
-    trap_report = bc.inspect_cards(
-        [{"video_id": "trap", "card": _card(style="not a talking head")}]
-    )
-    assert trap_report["n_valid"] == 0, (
-        "substring trap: 'not a talking head' a matché 'talking head'"
-    )
+    trap_report = bc.inspect_cards([{"video_id": "trap", "card": _card(style="not a talking head")}])
+    assert trap_report["n_valid"] == 0, "substring trap: 'not a talking head' a matché 'talking head'"
     assert len(trap_report["errors"]) == 1
     assert trap_report["errors"][0]["video_id"] == "trap"
     assert trap_report["errors"][0]["error"]
@@ -973,9 +936,7 @@ def _test_strict_synthetic_cases():
             "card": _card(style="talking head", realism="1", hook="question"),
         },
     ]
-    under_error = _strict_error(
-        under_two_thirds, bc.inspect_cards(under_two_thirds)
-    )
+    under_error = _strict_error(under_two_thirds, bc.inspect_cards(under_two_thirds))
     assert under_error is not None
     assert "majorité < 2/3 pour: style, realism, hook_mechanic" in under_error
 
@@ -995,9 +956,8 @@ def _test_strict_vs_permissive(brief, card_report, channel):
     # du registre.
     _builder_brief("neon_psycho", channel=channel, strict=False)  # ne lève pas
 
-    expected_strict_failure = (
-        card_report["n_valid"] != card_report["n_videos"]
-        or any(share < 2 / 3 for share in card_report["majority_share"].values())
+    expected_strict_failure = card_report["n_valid"] != card_report["n_videos"] or any(
+        share < 2 / 3 for share in card_report["majority_share"].values()
     )
     strict_error = None
     try:

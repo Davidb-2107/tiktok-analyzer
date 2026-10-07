@@ -17,7 +17,6 @@ from publication.manifest import (
     verify_release,
 )
 
-
 VECTORS = json.loads(
     (Path(__file__).parent / "publication" / "canonicalization-v1-vectors.json").read_text(encoding="utf-8")
 )
@@ -68,10 +67,8 @@ def manifest_for(payload: bytes | None = None) -> tuple[dict[str, object], bytes
 
 class PublicationManifestTests(unittest.TestCase):
     def test_optional_frame_bundle_digest_is_accepted_and_validated(self) -> None:
-        manifest, payload = manifest_for()
-        manifest["provenance"] = dict(
-            manifest["provenance"], frame_bundle_sha256="sha256:" + "e" * 64
-        )
+        manifest, _payload = manifest_for()
+        manifest["provenance"] = dict(manifest["provenance"], frame_bundle_sha256="sha256:" + "e" * 64)
         manifest["release_id"] = release_id_for(manifest)
 
         stored = canonical_manifest_bytes(manifest)
@@ -88,10 +85,8 @@ class PublicationManifestTests(unittest.TestCase):
             "sha256:" + "e" * 63,
         ):
             with self.subTest(value=value):
-                manifest, payload = manifest_for()
-                manifest["provenance"] = dict(
-                    manifest["provenance"], frame_bundle_sha256=value
-                )
+                manifest, _payload = manifest_for()
+                manifest["provenance"] = dict(manifest["provenance"], frame_bundle_sha256=value)
                 with self.assertRaisesRegex(ValueError, "frame_bundle_sha256"):
                     canonical_manifest_bytes(manifest)
 
@@ -125,7 +120,7 @@ class PublicationManifestTests(unittest.TestCase):
     def test_decimal_v1_normalizes_exact_sources_and_rejects_float_or_bad_grammar(self) -> None:
         # Break caught: publishing binary-float artifacts or non-canonical decimal text.
         self.assertEqual(canonical_decimal_string(Decimal("215.0")), "215")
-        self.assertEqual(canonical_decimal_string(Decimal("215")), "215")
+        self.assertEqual(canonical_decimal_string(Decimal(215)), "215")
         self.assertEqual(canonical_decimal_string("215.00"), "215")
         self.assertEqual(canonical_decimal_string(215), "215")
         self.assertEqual(canonical_decimal_string(Decimal("1.5")), "1.5")
@@ -173,15 +168,13 @@ class PublicationManifestTests(unittest.TestCase):
         for field in ("target_wpm", "target_duration_s", "shot_duration_s"):
             incomplete = runtime_payload()
             del incomplete["runtime"]["resolved_compilation_inputs"][field]
-            with self.subTest(missing=field):
-                with self.assertRaisesRegex(ValueError, "missing required fields"):
-                    verify_release(manifest["release_id"], manifest, canonical_json_bytes(incomplete))
+            with self.subTest(missing=field), self.assertRaisesRegex(ValueError, "missing required fields"):
+                verify_release(manifest["release_id"], manifest, canonical_json_bytes(incomplete))
         for field in ("target_duration_s", "shot_duration_s"):
             empty = runtime_payload()
             empty["runtime"]["resolved_compilation_inputs"][field] = []
-            with self.subTest(empty=field):
-                with self.assertRaisesRegex(ValueError, "non-empty"):
-                    verify_release(manifest["release_id"], manifest, canonical_json_bytes(empty))
+            with self.subTest(empty=field), self.assertRaisesRegex(ValueError, "non-empty"):
+                verify_release(manifest["release_id"], manifest, canonical_json_bytes(empty))
 
     def test_manifest_bytes_are_strictly_parsed_before_release_verification(self) -> None:
         # Break caught: silently normalizing stored manifest bytes before hashing release identity.
@@ -189,9 +182,11 @@ class PublicationManifestTests(unittest.TestCase):
         stored = canonical_manifest_bytes(manifest)
         self.assertEqual(parse_manifest_bytes(stored), manifest)
 
-        with patch("publication.manifest._read_canonical_json", return_value={}):
-            with self.assertRaisesRegex(ValueError, "missing required fields"):
-                parse_manifest_bytes(b"{}")
+        with (
+            patch("publication.manifest._read_canonical_json", return_value={}),
+            self.assertRaisesRegex(ValueError, "missing required fields"),
+        ):
+            parse_manifest_bytes(b"{}")
 
         duplicate = stored[:-1] + b',"project_id":"niche-42"}'
         noncanonical = stored.replace(b"{", b"{ ", 1)
@@ -224,10 +219,14 @@ class PublicationManifestTests(unittest.TestCase):
         manifest, _ = manifest_for()
         for vector in VECTORS["rejected_stored_bytes"]:
             if vector["name"] == "duplicate-key":
-                stored = b'{"runtime":' + vector["utf8"].encode("utf-8") + b'}'
+                stored = b'{"runtime":' + vector["utf8"].encode("utf-8") + b"}"
             else:
                 number = vector["utf8"].split(":", 1)[1][:-1]
-                stored = b'{"runtime":{"resolved_compilation_inputs":{"target_wpm":"215","target_duration_s":["1.5"],"shot_duration_s":["2.5"]},"value":' + number.encode("ascii") + b'}}'
+                stored = (
+                    b'{"runtime":{"resolved_compilation_inputs":{"target_wpm":"215","target_duration_s":["1.5"],"shot_duration_s":["2.5"]},"value":'
+                    + number.encode("ascii")
+                    + b"}}"
+                )
             with self.assertRaisesRegex(ValueError, "canonical|duplicate|number"):
                 verify_release(manifest["release_id"], manifest, stored)
 
@@ -260,7 +259,11 @@ class PublicationManifestTests(unittest.TestCase):
     def test_manifest_rejects_unsupported_versions_and_provenance_renames(self) -> None:
         # Break caught: silently accepting a new canonicalization/schema contract or old provenance spelling.
         manifest, _ = manifest_for()
-        for field, value in (("schema_version", 2), ("canonicalization_version", "json-c14n-v2"), ("hash_algorithm", "sha512")):
+        for field, value in (
+            ("schema_version", 2),
+            ("canonicalization_version", "json-c14n-v2"),
+            ("hash_algorithm", "sha512"),
+        ):
             changed = copy.deepcopy(manifest)
             changed[field] = value
             with self.assertRaises(ValueError):

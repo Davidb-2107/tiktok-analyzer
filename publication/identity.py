@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 
 from .manifest import _DECIMAL_CANONICAL, _schema_properties, _schema_required
 
-
 _HANDLE = re.compile(r"@[a-z0-9][a-z0-9._-]*\Z")
 _CHANNEL_SCHEMES = {"handle-slug-v1", "opaque-v1"}
 _PRECISIONS = {"exact", "approximate"}
@@ -89,9 +88,7 @@ def _intervals_overlap(
     second_start, second_end = second
     if first_end is not None and second_start >= first_end:
         return False
-    if second_end is not None and first_start >= second_end:
-        return False
-    return True
+    return not (second_end is not None and first_start >= second_end)
 
 
 def _validated_history(record: Mapping[str, object]) -> list[tuple[str, tuple[datetime, datetime | None]]]:
@@ -123,8 +120,7 @@ def _validated_history(record: Mapping[str, object]) -> list[tuple[str, tuple[da
         for other_handle, second_interval in intervals[index + 1 :]:
             if _intervals_overlap(first_interval, second_interval):
                 raise ValueError(
-                    "handle history intervals overlap within one channel: "
-                    f"{intervals[index][0]} and {other_handle}"
+                    f"handle history intervals overlap within one channel: {intervals[index][0]} and {other_handle}"
                 )
     return intervals
 
@@ -142,10 +138,7 @@ def validate_channel_record(record: Mapping[str, object]) -> None:
     )
     unexpected = set(channel) - _IDENTITY_FIELDS
     if unexpected:
-        raise ValueError(
-            "channel record contains unexpected fields: "
-            + ", ".join(sorted(unexpected))
-        )
+        raise ValueError("channel record contains unexpected fields: " + ", ".join(sorted(unexpected)))
     _nonempty_string(channel["channel_id"], "channel_id")
     if channel["channel_id_scheme"] not in _CHANNEL_SCHEMES:
         raise ValueError("channel_id_scheme is invalid")
@@ -220,20 +213,13 @@ def validate_identity_index(index: Mapping[str, object]) -> None:
         if record["origin_handle"] != intervals[0][0]:
             raise ValueError("origin_handle must match the first handle history entry")
         for handle, interval in intervals:
-            handle_intervals.setdefault((project_id, handle), []).append(
-                (channel_id, interval)
-            )
+            handle_intervals.setdefault((project_id, handle), []).append((channel_id, interval))
 
     for (project_id, handle), intervals in handle_intervals.items():
-        for index, (first_channel, first_interval) in enumerate(intervals):
-            for second_channel, second_interval in intervals[index + 1 :]:
-                if first_channel != second_channel and _intervals_overlap(
-                    first_interval, second_interval
-                ):
-                    raise ValueError(
-                        "handle history intervals overlap across channel IDs: "
-                        f"{project_id}/{handle}"
-                    )
+        for position, (first_channel, first_interval) in enumerate(intervals):
+            for second_channel, second_interval in intervals[position + 1 :]:
+                if first_channel != second_channel and _intervals_overlap(first_interval, second_interval):
+                    raise ValueError(f"handle history intervals overlap across channel IDs: {project_id}/{handle}")
 
 
 def allocate_channel_id(
@@ -245,20 +231,14 @@ def allocate_channel_id(
     project = _nonempty_string(project_id, "project_id")
     canonical_handle = _handle(handle, "handle")
     validate_identity_index(index)
-    used = {
-        record["channel_id"]
-        for record in _index_records(index)
-        if record.get("project_id") == project
-    }
+    used = {record["channel_id"] for record in _index_records(index) if record.get("project_id") == project}
     handle_slug = canonical_handle[1:]
     if handle_slug not in used:
         return handle_slug, "handle-slug-v1"
 
     counter = 0
     while True:
-        digest = hashlib.sha256(
-            f"{project}\0{canonical_handle}\0{counter}".encode("utf-8")
-        ).hexdigest()[:24]
+        digest = hashlib.sha256(f"{project}\0{canonical_handle}\0{counter}".encode()).hexdigest()[:24]
         candidate = f"opaque-{digest}"
         if candidate not in used:
             return candidate, "opaque-v1"
@@ -271,9 +251,7 @@ def _validate_taxonomy(value: object) -> None:
         raise ValueError("taxonomy.version must be a non-empty string")
     for field in ("styles", "mechanics"):
         values = taxonomy[field]
-        if not isinstance(values, list) or not all(
-            isinstance(item, str) and item for item in values
-        ):
+        if not isinstance(values, list) or not all(isinstance(item, str) and item for item in values):
             raise ValueError(f"taxonomy.{field} must be an array of strings")
     realism_values = taxonomy["realism_values"]
     if not isinstance(realism_values, list) or not all(
@@ -283,11 +261,7 @@ def _validate_taxonomy(value: object) -> None:
 
 
 def _validate_decimal(value: object, name: str) -> None:
-    if (
-        not isinstance(value, str)
-        or value == "-0"
-        or _DECIMAL_CANONICAL.fullmatch(value) is None
-    ):
+    if not isinstance(value, str) or value == "-0" or _DECIMAL_CANONICAL.fullmatch(value) is None:
         raise ValueError(f"{name} must be a canonical decimal-v1 string")
 
 
@@ -336,9 +310,7 @@ def _validate_runtime_records(
         )
         channel_id = _nonempty_string(item["channel_id"], "formula channel_id")
         if channel_id not in channel_ids:
-            raise ValueError(
-                f"formula channel_id is not declared in runtime.channels: {channel_id}"
-            )
+            raise ValueError(f"formula channel_id is not declared in runtime.channels: {channel_id}")
         subformula_id = _nonempty_string(item["subformula_id"], "subformula_id")
         key = (project_id, channel_id, subformula_id)
         if key in formula_keys:
@@ -354,9 +326,7 @@ def _validate_runtime_records(
         )
         channel_id = _nonempty_string(item["channel_id"], "mapping channel_id")
         if channel_id not in channel_ids:
-            raise ValueError(
-                f"mapping channel_id is not declared in runtime.channels: {channel_id}"
-            )
+            raise ValueError(f"mapping channel_id is not declared in runtime.channels: {channel_id}")
         video_id = _nonempty_string(item["video_id"], "video_id")
         _nonempty_string(item["subformula_id"], "mapping subformula_id")
         key = (project_id, channel_id, video_id)

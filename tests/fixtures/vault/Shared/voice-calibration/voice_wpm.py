@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-
 _DATA = json.loads((Path(__file__).parent / "voice_wpm.json").read_text(encoding="utf-8"))
 
 

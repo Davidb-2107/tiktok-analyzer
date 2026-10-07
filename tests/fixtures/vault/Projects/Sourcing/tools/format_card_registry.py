@@ -34,9 +34,9 @@ MECHANICS = [
 ]
 REALISM_VALUES = {"1", "2", "3", "4", "5"}
 
-_CARD_HEADER_RE = re.compile(r"^## FORMAT CARD.*$", re.M)
-_SECTION_HEADER_RE = re.compile(r"^## .*$", re.M)
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---(?:\s*\n|\Z)", re.S)
+_CARD_HEADER_RE = re.compile(r"^## FORMAT CARD.*$", re.MULTILINE)
+_SECTION_HEADER_RE = re.compile(r"^## .*$", re.MULTILINE)
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---(?:\s*\n|\Z)", re.DOTALL)
 
 
 def _frontmatter_value(text: str, key: str) -> str | None:
@@ -44,7 +44,7 @@ def _frontmatter_value(text: str, key: str) -> str | None:
     if not match:
         return None
     value_match = re.search(
-        rf"^{re.escape(key)}:\s*([^#\n]+?)\s*$", match.group(1), re.M
+        rf"^{re.escape(key)}:\s*([^#\n]+?)\s*$", match.group(1), re.MULTILINE
     )
     if not value_match:
         return None
@@ -55,7 +55,7 @@ def _field_values(card_text: str, label: str) -> list[str]:
     return [
         match.group(1).strip()
         for match in re.finditer(
-            rf"^- \*\*{re.escape(label)}:\*\*\s*(.+)$", card_text, re.M
+            rf"^- \*\*{re.escape(label)}:\*\*\s*(.+)$", card_text, re.MULTILINE
         )
     ]
 

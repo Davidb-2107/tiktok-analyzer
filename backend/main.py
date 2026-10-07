@@ -52,9 +52,7 @@ _job_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 # ALLOWED_VIDEO_DOMAINS (comma-separated). Empty value disables the check.
 _DEFAULT_ALLOWED_DOMAINS = "tiktok.com,youtube.com,youtu.be"
 ALLOWED_VIDEO_DOMAINS = {
-    d.strip().lower()
-    for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(",")
-    if d.strip()
+    d.strip().lower() for d in os.environ.get("ALLOWED_VIDEO_DOMAINS", _DEFAULT_ALLOWED_DOMAINS).split(",") if d.strip()
 }
 # Reject videos longer than this (seconds) before downloading. 0 disables the cap.
 MAX_VIDEO_DURATION_SEC = int(os.environ.get("MAX_VIDEO_DURATION_SEC", "600"))
@@ -169,9 +167,7 @@ _whisper_model: WhisperModel | None = None
 def _get_whisper() -> WhisperModel:
     global _whisper_model
     if _whisper_model is None:
-        _whisper_model = WhisperModel(
-            WHISPER_MODEL_NAME, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE
-        )
+        _whisper_model = WhisperModel(WHISPER_MODEL_NAME, device=WHISPER_DEVICE, compute_type=WHISPER_COMPUTE_TYPE)
     return _whisper_model
 
 
@@ -482,9 +478,7 @@ def _update_job(job_id: str, **kwargs) -> None:
 
 
 def _presign_key(key: str) -> str:
-    return s3.generate_presigned_url(
-        "get_object", Params={"Bucket": R2_BUCKET, "Key": key}, ExpiresIn=PRESIGN_TTL
-    )
+    return s3.generate_presigned_url("get_object", Params={"Bucket": R2_BUCKET, "Key": key}, ExpiresIn=PRESIGN_TTL)
 
 
 def _resolve_frames(job_id: str, job: dict) -> dict:
@@ -630,7 +624,7 @@ def _extract_frames(
             output_pattern,
             "-y",
         ]
-        return subprocess.run(cmd, capture_output=True, text=True)
+        return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     # First try: plain decode. Some HEVC TikTok sources tag VUI colour as
     # "reserved", which the filter-graph autoscaler rejects with
@@ -638,17 +632,13 @@ def _extract_frames(
     # rewrites VUI to bt709 before decoding.
     result = run([])
     if result.returncode != 0 and "Invalid color space" in result.stderr:
-        result = run(
-            ["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
-        )
+        result = run(["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"])
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed: {result.stderr}")
     return [p.name for p in sorted(out_dir.glob("frame_*.jpg"))]
 
 
-def _extract_scene_keyframes(
-    video_path: Path, job_id: str, scene_list: list[dict], max_keyframes: int
-) -> list[dict]:
+def _extract_scene_keyframes(video_path: Path, job_id: str, scene_list: list[dict], max_keyframes: int) -> list[dict]:
     """Extract one representative midpoint image for selected scenes.
 
     Scene intervals are always retained. A failed or unselected extraction is
@@ -688,12 +678,12 @@ def _extract_scene_keyframes(
             output_path = out_dir / filename
             timestamp = scene_detection.keyframe_time(scene)
 
-            def run(extra: list[str]) -> subprocess.CompletedProcess:
+            def run(extra: list[str], ts: float, out: Path) -> subprocess.CompletedProcess:
                 cmd = [
                     "ffmpeg",
                     *extra,
                     "-ss",
-                    str(timestamp),
+                    str(ts),
                     "-i",
                     str(video_path),
                     "-frames:v",
@@ -702,15 +692,17 @@ def _extract_scene_keyframes(
                     "format=yuvj420p",
                     "-q:v",
                     "2",
-                    str(output_path),
+                    str(out),
                     "-y",
                 ]
-                return subprocess.run(cmd, capture_output=True, text=True)
+                return subprocess.run(cmd, capture_output=True, text=True, check=False)
 
-            result = run([])
+            result = run([], timestamp, output_path)
             if result.returncode != 0 and "Invalid color space" in result.stderr:
                 result = run(
-                    ["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"]
+                    ["-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1"],
+                    timestamp,
+                    output_path,
                 )
             if result.returncode != 0 or not output_path.exists():
                 logger.warning("scene keyframe extraction failed for scene %s: %s", position, result.stderr)
@@ -735,7 +727,7 @@ def _ahash(path: Path, size: int = 8) -> int:
 
 
 def _hamming(a: int, b: int) -> int:
-    return bin(a ^ b).count("1")
+    return (a ^ b).bit_count()
 
 
 def _dedup_frames(out_dir: Path, frame_names: list[str], max_hamming: int = 4) -> list[str]:
@@ -892,9 +884,7 @@ async def _run_job(
             # frames. 240 ≈ 2 minutes of dense sampling.
             span = max(w_end - w_start, 1.0)
             fps = min(WINDOW_FPS, 240 / span)
-            frame_names = await asyncio.to_thread(
-                _extract_frames, video_path, _frames_dir(job_id), fps, span, w_start
-            )
+            frame_names = await asyncio.to_thread(_extract_frames, video_path, _frames_dir(job_id), fps, span, w_start)
             frame_names = await asyncio.to_thread(_dedup_frames, _frames_dir(job_id), frame_names)
             hook_frame_names: list[str] = []
         else:
@@ -970,9 +960,7 @@ async def _run_job(
             )
             transcript, segments = transcribe_result
             ((overlay_text, overlay_segments), (hook_overlay_text, hook_overlay_segments)) = ocr_result
-            voice_metrics = await asyncio.to_thread(
-                voice.analyze_voice, audio_path, segments, duration, HOOK_WINDOW_S
-            )
+            voice_metrics = await asyncio.to_thread(voice.analyze_voice, audio_path, segments, duration, HOOK_WINDOW_S)
 
         shutil.rmtree(_frames_dir(job_id), ignore_errors=True)
         shutil.rmtree(_hook_frames_dir(job_id), ignore_errors=True)
@@ -1371,7 +1359,7 @@ def _format_srt_timestamp(seconds: float) -> str:
     """Format seconds as HH:MM:SS,mmm per SRT spec."""
     if seconds is None or seconds < 0:
         seconds = 0.0
-    total_ms = int(round(seconds * 1000))
+    total_ms = round(seconds * 1000)
     hours, rem = divmod(total_ms, 3600 * 1000)
     minutes, rem = divmod(rem, 60 * 1000)
     secs, ms = divmod(rem, 1000)
@@ -1448,11 +1436,7 @@ def _refresh_metadata_sync(url: str) -> tuple[float, str | None, dict]:
         info = ydl.extract_info(url, download=False)
     duration = float(info.get("duration") or 0)
     uploader = next(
-        (
-            v
-            for v in (info.get("uploader_id"), info.get("uploader"), info.get("channel"))
-            if v and not str(v).isdigit()
-        ),
+        (v for v in (info.get("uploader_id"), info.get("uploader"), info.get("channel")) if v and not str(v).isdigit()),
         None,
     )
     raw_tags = info.get("tags") or []

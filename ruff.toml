@@ -1,0 +1,23 @@
+# Ruff — config du projet (opt-in : sa presence active le hook lint-py.sh).
+# Forme canonique = celle de Agregateur_Vacances (decision 2026-10-05) :
+# on suit les DEFAUTS de ruff (version figee via pre-commit rev / requirements),
+# pas de derive silencieuse au changement de version sans revue de ce fichier.
+#
+# Regle d'or du template :
+#   - categories "defaut" (vrais defauts + style mecanique) = JAMAIS ignorees,
+#     on corrige ;
+#   - seuls les conflits avec l'architecture du projet entrent dans `ignore`,
+#     avec la raison ecrite et datee ci-dessous.
+
+line-length = 120
+
+[lint]
+# Decisions 2026-10-06 : ecarts justifies au standard ruff (categorie 3).
+# - BLE001 / S110 : `except Exception` + try/except/pass assumes — les endpoints
+#   FastAPI et l'extraction doivent renvoyer une erreur propre, jamais laisser
+#   crasher le serveur ; ruff ne connait pas cette intention d'architecture.
+# - TRY004 : l'API de validation (publication/*) promet UNIFORMEMENT ValueError
+#   sur toute entree invalide, valeur ou type confondus — contrat couvert par
+#   la suite de tests. Passer en TypeError casserait l'homogeneite du contrat
+#   et les handlers `except ValueError` qui l'encadrent.
+ignore = ["BLE001", "S110", "TRY004"]

@@ -21,7 +21,6 @@ from publication.manifest import parse_manifest_bytes, verify_release
 from publication.media import MEDIA_EXTENSIONS, require_media_digests, verify_media_bytes
 from publication.release_state import ReleaseStateError, read_release_state
 from publication.source import parse_source_context, resolve_source
-
 from vps.release_sync import (
     ReleaseSync,
     S3ObjectStore,
@@ -35,14 +34,15 @@ from vps.release_sync import (
     write_pin,
 )
 
-
 LOG = logging.getLogger("tiktok_analyzer.activation")
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 # Everything that can reach the Hub image build context (ADR 0007).
 _IMAGE_INPUTS = ("Dockerfile.prod", ".dockerignore", ".gitattributes", "backend", "publication", "frontend")
 _HUB_CONTAINER = "tiktok-analyzer"
 _REVISION_LABEL = "org.opencontainers.image.revision"
-_MEDIA_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}(?:" + "|".join(re.escape(ext) for ext in MEDIA_EXTENSIONS) + r")\Z")
+_MEDIA_NAME = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}(?:" + "|".join(re.escape(ext) for ext in MEDIA_EXTENSIONS) + r")\Z"
+)
 
 
 class ActivationError(RuntimeError):
@@ -131,7 +131,7 @@ class ActivationConfig:
     external_url: str | None
 
     @classmethod
-    def from_env(cls, *, require_hub: bool = True) -> "ActivationConfig":
+    def from_env(cls, *, require_hub: bool = True) -> ActivationConfig:
         state_root = Path(os.environ.get("RELEASE_SYNC_STATE_ROOT", "/var/lib/tiktok-analyzer/release-sync"))
         release_root = os.environ.get("RELEASE_SYNC_RELEASE_ROOT", "")
         media_root = os.environ.get("RELEASE_SYNC_MEDIA_ROOT", "")
@@ -174,7 +174,9 @@ def _restore_state(path: Path, release_id: str | None) -> None:
     _write_state(path, release_id)
 
 
-def _validate_local_release(config: ActivationConfig, release_id: str) -> tuple[Mapping[str, object], list[dict[str, object]]]:
+def _validate_local_release(
+    config: ActivationConfig, release_id: str
+) -> tuple[Mapping[str, object], list[dict[str, object]]]:
     digest = _digest_hex(release_id)
     directory = config.release_root / "sha256" / digest
     if not directory.exists():
@@ -302,7 +304,9 @@ class ReleaseActivator:
             raise ServingMismatch(f"Hub did not serve requested release: {release_id}") from error
         if gate_exempt:
             image_revision = self._optional_revision()
-        self._audit(active, release_id, actor, reason, idempotent=False, gate_run=gate_run, image_revision=image_revision)
+        self._audit(
+            active, release_id, actor, reason, idempotent=False, gate_run=gate_run, image_revision=image_revision
+        )
         return release_id
 
     def check(self, image: str | None = None) -> dict[str, str]:
@@ -413,7 +417,16 @@ class ReleaseActivator:
     ) -> None:
         _append_journal(
             self.config.journal_path,
-            {"actor": actor, "old": old, "new": new, "reason": reason, "idempotent": idempotent, "gate_run": gate_run, "image_revision": image_revision, "timestamp": _now()},
+            {
+                "actor": actor,
+                "old": old,
+                "new": new,
+                "reason": reason,
+                "idempotent": idempotent,
+                "gate_run": gate_run,
+                "image_revision": image_revision,
+                "timestamp": _now(),
+            },
         )
 
 
@@ -481,7 +494,7 @@ class DockerGitInspector:
         return diff.returncode == 0
 
     def _git(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True)
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=False)
 
 
 class LocalGarbageCollector:
@@ -518,9 +531,16 @@ class LocalGarbageCollector:
         release_directory = self.config.release_root / "sha256"
         if release_directory.exists():
             for candidate in release_directory.iterdir():
-                if not re.fullmatch(r"[0-9a-f]{64}", candidate.name) or candidate.name in {item[7:] for item in protected}:
+                if not re.fullmatch(r"[0-9a-f]{64}", candidate.name) or candidate.name in {
+                    item[7:] for item in protected
+                }:
                     continue
-                if candidate.is_symlink() or not candidate.is_dir() or {item.name for item in candidate.iterdir()} != {"manifest.json", "payload.json"} or any(item.is_symlink() or not item.is_file() for item in candidate.iterdir()):
+                if (
+                    candidate.is_symlink()
+                    or not candidate.is_dir()
+                    or {item.name for item in candidate.iterdir()} != {"manifest.json", "payload.json"}
+                    or any(item.is_symlink() or not item.is_file() for item in candidate.iterdir())
+                ):
                     continue
                 shutil.rmtree(candidate)
                 deleted_releases += 1
@@ -528,7 +548,12 @@ class LocalGarbageCollector:
         deleted_media = 0
         if self.config.media_root.exists():
             for candidate in self.config.media_root.iterdir():
-                if not _MEDIA_NAME.fullmatch(candidate.name) or candidate.name in referenced_media or candidate.is_symlink() or not candidate.is_file():
+                if (
+                    not _MEDIA_NAME.fullmatch(candidate.name)
+                    or candidate.name in referenced_media
+                    or candidate.is_symlink()
+                    or not candidate.is_file()
+                ):
                     continue
                 candidate.unlink()
                 deleted_media += 1
@@ -538,7 +563,13 @@ class LocalGarbageCollector:
 def _sync_runner() -> Callable[[], bool]:
     def run() -> bool:
         config = SyncConfig.from_env()
-        store = S3ObjectStore(endpoint=config.endpoint, bucket=config.bucket, region=config.region, access_key=config.access_key, secret_key=config.secret_key)
+        store = S3ObjectStore(
+            endpoint=config.endpoint,
+            bucket=config.bucket,
+            region=config.region,
+            access_key=config.access_key,
+            secret_key=config.secret_key,
+        )
         return ReleaseSync(config, store).run()
 
     return run
@@ -547,7 +578,13 @@ def _sync_runner() -> Callable[[], bool]:
 def _gate_reader() -> Callable[[str], bytes | None]:
     def read(release_id: str) -> bytes | None:
         config = SyncConfig.from_env()
-        store = S3ObjectStore(endpoint=config.endpoint, bucket=config.bucket, region=config.region, access_key=config.access_key, secret_key=config.secret_key)
+        store = S3ObjectStore(
+            endpoint=config.endpoint,
+            bucket=config.bucket,
+            region=config.region,
+            access_key=config.access_key,
+            secret_key=config.secret_key,
+        )
         return store.get(f"{config.prefix}gates/sha256/{_digest_hex(release_id)}.json")
 
     return read
@@ -574,7 +611,11 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         if args.command == "gc":
-            print(json.dumps(LocalGarbageCollector(ActivationConfig.from_env(require_hub=False)).collect(), sort_keys=True))
+            print(
+                json.dumps(
+                    LocalGarbageCollector(ActivationConfig.from_env(require_hub=False)).collect(), sort_keys=True
+                )
+            )
             return 0
         config = ActivationConfig.from_env()
         hub = CommandHubController(config.reload_command, config.external_url)

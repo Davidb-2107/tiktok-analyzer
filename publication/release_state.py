@@ -3,7 +3,6 @@
 import re
 from pathlib import Path
 
-
 _RELEASE_ID = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 

@@ -6,12 +6,11 @@ import re
 import unicodedata
 from collections.abc import Mapping
 from decimal import Decimal, InvalidOperation
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 from .media import canonical_media_digests, validate_media_digests_against_runtime
-
 
 _CANONICAL_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _RELEASE_ID = _CANONICAL_DIGEST
@@ -47,7 +46,7 @@ _REQUIRED_PROVENANCE_FIELDS = {
 _OPTIONAL_PROVENANCE_DIGESTS = ("frame_bundle_sha256",)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _schema_required(definition: str) -> frozenset[str]:
     try:
         schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -59,7 +58,7 @@ def _schema_required(definition: str) -> frozenset[str]:
     return frozenset(required)
 
 
-@lru_cache(maxsize=None)
+@cache
 def _schema_properties(definition: str) -> frozenset[str]:
     try:
         schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -93,7 +92,7 @@ def canonical_payload_bytes(payload: Mapping[str, object]) -> bytes:
 
 def canonical_decimal_string(value: object) -> str:
     """Normalize an exact decimal source to the decimal-v1 text form."""
-    if isinstance(value, bool) or isinstance(value, float):
+    if isinstance(value, (bool, float)):
         raise ValueError("decimal-v1 rejects binary float input")
     if isinstance(value, str):
         if not _DECIMAL_SOURCE.fullmatch(value):
@@ -186,9 +185,7 @@ def _validate_manifest(manifest: Mapping[str, object]) -> None:
         if field in manifest["provenance"]:
             value = manifest["provenance"][field]
             if not isinstance(value, str) or not _CANONICAL_DIGEST.fullmatch(value):
-                raise ValueError(
-                    f"provenance.{field} is not canonical sha256:<lowercase-hex>"
-                )
+                raise ValueError(f"provenance.{field} is not canonical sha256:<lowercase-hex>")
     if "media_digests" in manifest:
         media_digests = canonical_media_digests(manifest["media_digests"])
         if manifest["media_digests"] != media_digests:
