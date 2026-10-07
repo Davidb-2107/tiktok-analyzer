@@ -60,8 +60,8 @@
         "views": 106700
       }
     ],
-    "format_card_ref": "Projects/Sourcing/transcripts/dark_psycho/",
-    "channel_formula_ref": "Projects/Sourcing/formats/darkpsychology1100.md"
+    "format_card_ref": "Projects/Sourcing/transcripts/dark_psycho/darkpsychology1100/",
+    "channel_formula_ref": "Projects/Sourcing/formats/dark_psycho/darkpsychology1100.md"
   },
   "format": {
     "style": "AI animation",

@@ -174,6 +174,7 @@ def main():
     if channel in {"@ci", "@fixture_b"}:
         _test_channel_formula_routing(channel)
     _test_arbitrary_channel_routing()
+    _test_nested_channel_layout()
 
     # --- console Windows cp1252 : warning permissif --------------------------
     if os.environ.get("RUN_DARK_PSYCHO_SMOKE") == "1":
@@ -613,6 +614,41 @@ def _test_arbitrary_channel_routing():
             lambda: bc.find_formula(bc.load_registry(niche, channel="@alpha")),
             "incomplète",
         )
+
+
+def _test_nested_channel_layout():
+    """Le layout Vault channel-scoped doit rester lisible par le compilateur."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        transcripts = root / "transcripts" / "nested_niche" / "viraldtoprw"
+        formats = root / "formats"
+        transcripts.mkdir(parents=True)
+        formats.mkdir()
+        (transcripts / "1000000000000000001.md").write_text(
+            "---\n"
+            "video_url: https://example.test/1000000000000000001\n"
+            "channel: \"@viraldtoprw\"\n"
+            "title: nested fixture\n"
+            "views: 1\n"
+            "---\n\n"
+            "## Transcript\n\nA nested transcript.\n\n"
+            + _card()
+        )
+        (formats / "viraldtoprw.md").write_text(
+            "videos: 1000000000000000001\n", encoding="utf-8"
+        )
+        original_transcripts, original_formats = bc.TRANSCRIPTS, bc.FORMATS
+        bc.TRANSCRIPTS, bc.FORMATS = root / "transcripts", formats
+        try:
+            videos = bc.load_registry("nested_niche", channel="@viraldtoprw")
+            assert len(videos) == 1
+            assert videos[0]["ref"].endswith(
+                "transcripts/nested_niche/viraldtoprw/1000000000000000001.md"
+            )
+            formula, _ = bc.find_formula(videos)
+            assert formula.name == "viraldtoprw.md"
+        finally:
+            bc.TRANSCRIPTS, bc.FORMATS = original_transcripts, original_formats
 
 
 def _test_cp1252_warning():
