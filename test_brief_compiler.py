@@ -623,19 +623,21 @@ def _test_nested_channel_layout():
         transcripts = root / "transcripts" / "nested_niche" / "viraldtoprw"
         formats = root / "formats"
         transcripts.mkdir(parents=True)
-        formats.mkdir()
+        (formats / "nested_niche").mkdir(parents=True)
         (transcripts / "1000000000000000001.md").write_text(
             "---\n"
             "video_url: https://example.test/1000000000000000001\n"
             "channel: \"@viraldtoprw\"\n"
+            "channel_id: viraldtoprw\n"
             "title: nested fixture\n"
             "views: 1\n"
             "---\n\n"
             "## Transcript\n\nA nested transcript.\n\n"
             + _card()
         )
-        (formats / "viraldtoprw.md").write_text(
-            "videos: 1000000000000000001\n", encoding="utf-8"
+        (formats / "nested_niche" / "viraldtoprw.md").write_text(
+            "---\nchannel_id: viraldtoprw\n---\n\nvideos: 1000000000000000001\n",
+            encoding="utf-8",
         )
         original_transcripts, original_formats = bc.TRANSCRIPTS, bc.FORMATS
         bc.TRANSCRIPTS, bc.FORMATS = root / "transcripts", formats
